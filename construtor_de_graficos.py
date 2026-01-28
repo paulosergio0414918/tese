@@ -10,14 +10,19 @@ class Grafico2d:
     """
     def __init__(self, 
                  x: tuple, 
-                 y: tuple, 
-                 title = " Grafico da função"
+                 y: tuple,
+                 inicio: float = 4, 
+                 title: str = " Grafico da função",
+                 passos: int = 4096 
                  ):
+       
        self.title = title
        self.x = x
        self.y = y
+       self.passos = passos
+       self.inicio = inicio
        plt.ylim(-0.025, 0.06) #limites do eixo y
-       plt.xlim(-1.5, 1.5) #limites do eixo x
+       plt.xlim(-0.5, 4) #limites do eixo x
        plt.title(self.title) # título do Gráfico
        
        
@@ -32,7 +37,7 @@ class Grafico2d:
         return self
     
     def duplo_plot(self):
-        x = np.linspace(-1.5, 1.5, 1_000)
+        x = np.linspace(-self.inicio, self.inicio, self.passos)
         plt.plot(x, self.x)
         plt.plot(x, self.y)
         plt.show()

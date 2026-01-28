@@ -1,4 +1,5 @@
 import numpy as np
+from typing import Union
 
 class Funcoes2d:
     """
@@ -13,20 +14,20 @@ class Funcoes2d:
         "processo de assimilação de dados. As funções aqui presentes são condisentes" \
         "com a bibliografia utlizada na tese. "
 
-    def condicao_inicial(self,
-                         x: float
-                         ):
+    def condicao_paper(self,
+                         x: Union[float, tuple]
+                         ) -> tuple:
         
-        return (1/20) * np.exp(-100 * x**2)
+        return (1/20)*np.exp(-100*x**2)
     
     def condicao_inicial2(self,
-                          x: float
-                          ):
-        return (1/20) * np.exp(-1_000 * x**2)
+                          x: Union[float, tuple]
+                          )-> tuple:
+        return (1/20)*np.exp(-1_000*x**2)
     
     def condicao_caixa(self, 
-                       x: float
-                       ):
+                       x: Union[float, tuple]
+                       )-> tuple:
         if isinstance(x, (np.ndarray, list, tuple)):
             x = np.asarray(x)
             return 0.05*((x >= -1).astype(float) + (x <= 1).astype(float) - 1)
@@ -45,7 +46,7 @@ if __name__ == "__main__":
     cod_inicial = Funcoes2d()
 
     #construindo o eixo y
-    y = cod_inicial.condicao_inicial(x)
+    y = cod_inicial.condicao_paper(x)
     y2 = cod_inicial.condicao_caixa(x)
 
     #construindo o grafico da função

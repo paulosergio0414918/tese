@@ -16,11 +16,11 @@ Cujas instruções podem ser obtidas aqui ou pelo código inspect(objeto) no ter
 
 
 ## CODE ISSUES
-[x] Conseguir apresentar gráficos de forma eficiente
-[x] Calcular as condições iniciais
-[ ] Coletar os dados através das condições inicias
-[ ] Obter a assimilação de dados de forma numérica como dado em 2.
-[ ] Obter a assimilação de dados de forma analítica como proposto em minha tese
+- [x] Conseguir apresentar gráficos de forma eficiente
+- [x] Calcular as condições iniciais
+- [ ] Coletar os dados através das condições inicias
+- [ ] Obter a assimilação de dados de forma numérica como dado em 2.
+- [ ] Obter a assimilação de dados de forma analítica como proposto em minha tese
 
 ## BIBLIOGRAFIA BÁSICA
 1. Kevlahan, N. R., Khan, R., & Protas, B. (2019). On the convergence of data assimilation for the one-dimensional shallow water equations with sparse observations. Advances in Computational Mathematics, 45(5), 3195-3216.
