@@ -10,6 +10,7 @@ Afim de facilitar a correção de possíveis bugs, cada aspecto do código foi d
 Desta forma:
 * Todos os gráficos são constuidos pela classe Grafico2d no arquivo construto_de_graficos.py
 * Todas as funções usadas estão no arquivo condicoes_iniciais.py
+* O método de discretização se encontra no arquivo metodos_numericos.py juntamento com a função que coleta os dados utilizando a condição inicial dada.
 
 E todos as funcionalidades são concentradas e realizadas no arquivo data_assimilation_main.py
 Cujas instruções podem ser obtidas aqui ou pelo código inspect(objeto) no terminal.
@@ -18,7 +19,7 @@ Cujas instruções podem ser obtidas aqui ou pelo código inspect(objeto) no ter
 ## CODE ISSUES
 - [x] Conseguir apresentar gráficos de forma eficiente
 - [x] Calcular as condições iniciais
-- [ ] Coletar os dados através das condições inicias
+- [x] Coletar os dados através das condições inicias
 - [ ] Obter a assimilação de dados de forma numérica como dado em 2.
 - [ ] Obter a assimilação de dados de forma analítica como proposto em minha tese
 
