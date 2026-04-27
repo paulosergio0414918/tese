@@ -342,8 +342,8 @@ class Assimilacao(SolucaoAdveccao):
         self.dom = dom
         self.c = c
         self.condicao = condicao
-        self.passos = [int(self.dom.M - np.ceil(self.dom.N/(4*self.dom.L))*i) for i in range(self.n_amostras)]
-        #self.passos = np.flip(-1 + np.linspace(dom.M, 0 , self.n_amostras, dtype = int, endpoint=False))
+        self.passos = [int((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2) for i in range(self.n_amostras)]
+        #self.passos = [int(self.dom.M - np.ceil(self.dom.N/(4*self.dom.L))*i) for i in range(self.n_amostras)]
         self.ruido = ruido
         self.sol = SolucaoAdveccao(self.dom)
         self.modo = modo
@@ -506,19 +506,40 @@ if __name__ == "__main__":
     import construtor_de_graficos as cdg
 
     ###### parâmetros #######
-    op = 11
+    op = 12
     ruido = True
     iteracoes = 32
+    amos = 5
+
 
     ###### objetos ##########
     dom = dominio.Dominio()
-    ass = Assimilacao(dom, modo="analitico", ruido= ruido)
+    ass = Assimilacao(dom, modo="analitico", n_amostras = amos)
     sol = SolucaoAdveccao(dom)
     val = Validacao()
     
+    if op == 12: #Grafico de todas as amostras
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D
 
+        
+        matriz = ass.matriz_de_amostras()
 
-    if op == 11: # Constatação do resultado teórico para advecção
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        for i in range(amos):
+            ax.plot(np.full_like(dom.x, i+1), dom.x, matriz[:, i], linewidth=2)
+
+        ax.set_xlabel('Amostra')
+        ax.set_ylabel('x')
+        ax.set_zlabel('u')
+        ax.set_xticks([i for i in range(amos)])
+        ax.view_init(25, -60)
+        plt.show()
+
+    elif op == 11: # Constatação do resultado teórico para advecção
             k = ass.E
             d1 = ass.diferenca(iter = iteracoes)
             ass2 = Assimilacao(dom, modo="analitico", ruido= True, n_amostras=4)            
