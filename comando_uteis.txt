@@ -1,0 +1,390 @@
+**************************************************
+*******  Object-oriented programming  ************
+**************************************************
+
+Retomando o aprendizado de orientação a objetos, desta vez usando uma playlist recomendada pelo professor
+Pedro. É uma disciplina dada no curso na Imperial Colege voltado para matemáticos cujo link é
+https://object-oriented-python.github.io/index.html# embora eu tenha gravado todas as aulas na pasta poo_videos
+
+Topics of each class
+
+*** class 1.1: Setting up your virtual environment *****
+link: https://player.vimeo.com/video/486546635
+
+We biggining creating an virtual environments with the command
+python3 -m venv PoP_venv
+and before he install IPython terminal
+
+--> importants command in virtual environments <-- 
+--> from: https://youtu.be/Y21OR1OPC9A?si=sBzgJ9-CXFSl2pa3 <--
+
+[1] source name_of_venv/bin/activate -> to activate the vitual environment
+[2] deactivate -> to deactivate the virtual environment
+[3] pip list -> to show the all packages installed
+[4] pip install package_name -> to install any package
+[5] pip freeze > requirements.txt -> save all dependencies we used in a .txt file
+[6] pip install -r file_name.txt -> to install all dependencies in a file
+
+*** class 2.1: a first Python script *****
+In this class we create a new folder named test and into it we create a new python file named hello, then run it.
+link: https://player.vimeo.com/video/486557682
+[0] ipython -> to activate the ipython interpreter
+[1] quit -> exit of the ipython
+[2] mkdir test -> create a folder test 
+
+*** class 2.2: A first Python module ***
+link: https://player.vimeo.com/video/486845755
+In this class we create the first module. That is we crete an python file from we can import functions.
+As an example professor create a module for fibonacci sequence.
+[0] Is very import start a function telling what it return with a single sting. Never forget it.
+[1] import module_name -> to import the module
+[2] from module_name import function_name -> to import just especfic function
+[3] from module_name import function_name as function_name_2 -> to import an especific function an rename 
+[4] dir() -> Shows all names in current namespace
+
+*** class 2.3: A first Python package ***
+-> We start to use git.
+-> A limitation of the module is that python only find it if it's in the same folder. That's why package is batter. 
+-> The way python knows the folder is in fact a package is because it contains a special file __init__
+-> When you see or hear "initopes" in a Python context, mentally replace it with "iterables". This is the 
+core concept being referred to.
+-> .toml is an important file format in modern Python programming. It a configuration file format 
+designed to be easy to read and write. 
+-> .toml is a language for configurate files. 
+-> The simple act of adding pyproject.toml to may repository make the repository installable.
+[1] python3 -m pip install -e . -> to install my new package; is necessary to be in the folder were the .roml is.
+
+*** class 2.4: Introducing Pytest ***
+python3 -m pip install pytest -> to install the pytest
+
+-> pytest work testing functions whos names starts with test.
+-> assert statement is used for debugging and testing purposes to check if a given condition 
+is True. If the condition is False, it raises an AssertionError.
+[1] pytest -> to run the pytest. It's necessary to be in folder /tests to run.
+-> if code don't have any exceptions the test just pass
+
+*** class 3.1: A first class ***
+In this class we follow the  steps to create an installabel class
+-> Camel Casing is a naming convention for variables, functions, classes, and other identifiers.
+To name a class never use underscore to replace spaces, use the Camel Casing instead.
+-> instance methods always take the object that they're acting on as the first argument. So this we have a parameter
+ called self. The object itself in a method is always called self.
+-> init never returns anything because init job is to take in self and setup self by acting on self
+
+*** class 3.2: Defining methods ***
+
+-> the method job is to report something out from the class
+
+*** class 3.3: Printing classes ***
+[1] def __ str__(self,) -> to create a print of some class 
+-> python evaluate the second term of boolean or if the first term is false
+ALWAYS RETURN HERE TO REMAIND HOW TO CREAT A GOOD CODE IN PYTHON
+
+*** class 3.4: Testing and object quality ***
+[1] pytest tests -> to excute all tests in the folder tests.
+-> Frist we write all the test stablished what the code would do and than we write the code
+[2] pytest -x tests -> stop the tests in the first error.
+[3] __eq__(self,other) -> used to compare terms
+
+*** class 3.5: Polynomial addition ***
+
+[1] __add__(self, other):-> method to add terms
+[2] zip()-> is a function that aggregates elements from multiple iterables (lists, tuples, etc.)
+ and returns an iterator of tuples.
+[3] __radd__(self, other): -> method to add terms in reverse way. Its usefull to comutative propriety
+
+*** class 4.1: Why style ***
+-> Style is an investiment in my future happiness
+-> try to study about pep8. These videos below are good references
+https://youtu.be/wKECxtmbvYQ?si=kJqJIRxIqHqgfb9q
+https://youtu.be/hgI0p1zf31k?si=m3ngayAhUMQcZuU0
+
+*** class 4.2: Installing and using linter ***
+-> I not sure if I'll install linter.
+
+*** class 5.1: Stacks as an abstract data tipe ***
+-> there are a genious example of stacks(pilhas) in this video.
+
+*** class 5.2: Dynamic arrays and complexity ***
+-> theorical class
+
+*** class 5.3: Deques and ring buffers ***
+-> theorical class
+
+*** class 5.4: Linked lists ***
+-> how to document a class
+
+*** class 5.5: The iterator protocol ***
+-> implementation of the iterator protocol
+[1] __iter__(): -> iterator method
+
+*** class 6.1: Errors and exceptions ***
+-> messages error folow the pattern
+[0] ErrorModel : Error message 
+
+*** class 6.2: Tracebacks ***
+->
+
+*** class 6.3: The call stack ***
+->
+
+*** class 6.4: Raising an exception ***
+-> search for class errors in python for find the more appropriate case.
+-> important class to creat a message error.
+
+*** class 6.5: Handling exceptions ***
+-> here we find the try block and exception.
+[1]try:
+[2]except error_type:
+
+*** class 6.6: Further exceptions handling ***
+-> Example of try block
+[0] def function(argument):
+    try:
+        what the function needs to do
+    except error_type_1:
+        what to do if error_type_1 happens.
+    except error_type_2:
+        what to do if error_type_2 happens.
+    [and so on...]
+    else:
+        if the operations is successed
+    finally:
+        case the operation is successed or error is raised
+-> RETURN is used for normal program flow to exit a function and pass
+ a value back to the caller, while RAISE is used for exceptional circumstances
+ to signal that an error has occurred, which abruptly stops the function's 
+ execution and propagates up the call stack.
+
+*** class 7.1: Inheritance and composition. ***
+-> Just a theoretical class
+
+*** class 7.2: An example from group theory. ***
+-> Thus far the must important class
+[1] __init__(self) -> is the constructor method in Python classes. 
+It's automatically called when you create a new instance of a class and is used 
+to initialize the object's attributes.
+
+[2] __repr__(self) -> is a special method (called a "dunder" method) that returns
+ a string representation of an object. It's used to create an official, 
+ unambiguous string representation of an object, primarily for debugging
+ and development purposes.
+
+[3]__call__(self) -> in Python is a special method that allows an object to be
+ called like a function. When you define __call__ in a class, instances of 
+ that class become callable - you can use parentheses () on them.
+
+[4] __mul__(self, other) -> is a special method in Python that implements 
+the multiplication operation (*) for objects. It allows you to define 
+what happens when you multiply your custom objects with the * operator.
+
+*** class 7.3: Inheritance. ***
+
+-> Very clever class 
+[1] class Class1(Class0) -> means all atributs don't have in Class1 is in Class0,
+ this is Inheritance.
+
+
+*** class 8.1: Using a graphical debugger. ***
+-> theoretical class about debuger using graphical tool from vscode
+
+*** class 8.2: Command line debuggers. ***
+-> theoretical class about debuger using ipdb. Later try to find a class about it.
+-> ipdb stands for IPython-enabled Python Debugger. It's an enhanced debugger 
+ that combines Python's built-in pdb debugger with IPython features, making 
+ debugging much more powerful and user-friendly.
+
+*** class 8.3: Minimal failing examples and bisection. ***
+-> Numpoly is a Python library for polynomial algebra with NumPy arrays.
+
+*** class 9.1: Splat and double splat. ***
+-> that is an important class. Here we understand the *(star)operand.
+
+[1]print(*a) -> if a is tuple this comand will unpacks a into a sequence to
+ print without commas and brackets
+[2] zip(a,b) -> is a function that combines multiple iterables 
+(lists, tuples, strings, etc.) element-wise into tuples. It creates an 
+iterator that aggregates elements from each of the iterables.
+
+Example:
+[in] for pair in zip(a, b):
+        print(pair)
+[out](a_1, b_1)
+     (a_2, b_2)
+     and so on ...
+
+Example: using star operator
+[in] for pair in zip(a, b):
+        print(*pair)
+[out] a_1, b_1
+      a_2, b_2
+     and so on ...
+
+Example: it could be in other way
+[in] for a_, b_ in zip(a, b):
+        print(a_, b_)
+[out] a_1, b_1
+      a_2, b_2
+     and so on ...
+
+-> doble splat does for keyword argument what single splat does for positional 
+-> while splat operator packs and umpacks sequences duble splat packs and umpacks dictionaries
+
+[3]**kwargs -> is a special syntax in Python that allows a function
+ to accept any number of keyword arguments. It collects these arguments
+ into a dictionary where the keys are the argument names (as strings)
+ and the values are the argument values.
+
+[4]*args -> is a special syntax that allows a function to accept any number
+ of positional arguments. It collects these arguments into a tuple.
+
+
+*** class 9.2: Tree data structures. ***
+
+
+
+
+
+
+
+
+
+**************************************************
+*************requirements.txt ********************
+**************************************************
+[1] Não esquecer de ativar o ambiente virtual
+--> source venv/bin/activate
+
+[2] Obter uma lista de todos os pacotes instalados
+--> pip freeze
+
+[3] criar o arquivo requirements.txt
+--> pip freeze > requirements.txt
+
+[4] instalar todos os pacotes existente no arquivo 
+--> pip install -r requirements.txt
+
+
+**************************************************
+****************** o Básico de Git ***************
+**************************************************
+
+Comandos básicos do git
+**********************************************************************************
+para iniciar o git com em um projeto qualquer devemos seguir os seguintas passos:
+echo "# SWE" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin url do repositorio no git exemplo: https://github.com/paulosergio0414918/SWE.git
+git push -u origin main
+**********************************************************************************
+
+git init -> vai criar uma pasta no arquivo que deseja se enviado ao git
+git status -> vai fornecer o status do arquivos presentes na pasta a ser enviada ao git
+git add . -> adiciona as mudanças realisadas ao projeto que será eviada ao git
+git commit -a -m 'mensagem' -> salva os arquivos e alterações no git
+
+**************************
+É uma boa prática tentar escrever mensagens do commit de forma mais semântica
+para fazer isso no vscode iniciamos a mensagem(essa parte será semelhante à um título do commit),
+inserimos um enter
+e continuamos a mensagem(essa parte será semelhante ao corpo do commit) um bom padrão é 
+
+TÍTULO DO COMMIT COM ATÉ 50 CARACTERES
+enter
+corpo do commit apresentando a funcionalidade do cógigo commitado.
+**************************
+
+git push -> envia os aquivos salvos no git ao github
+git pull -> atualiza as informações que foram acrescentdas no git por outra pessoa
+git clone -> copia um projeto do git para o computador
+git rm nome_do_arquivo -> remove um arquivo do projeto e do computador
+git reset --hard <hash_do_commit> -> retorma ao estado do commit dado pela hash que pode ser obtida pelo comando git reflog
+git log -> fornece um resumo dos commits do projeto
+ctrl z ou ctrl q -> pra sair do resumo fornecido pelo comando acima.
+git shortlog -> fornece um resumo curto dos commits do projeto
+git reflog vai mapear todos os seus passos no repositório
+git mv nome_do_arquivo novo_nome_do_arquivo -> renomia os arquivos
+git checkout reseta todas as auterações realizada e retorna todos os arquivos como estão no repositório
+.gitignore ao criarmos um arquivo chamado .gitignore podemos acrescentar nele todos os arquivo que não são necessários subir no git como exemplo os arquivos gerados pelo tex
+git reset --hard origin/master vai resetar todas as alterações inclusive as commitadas retornando o arquivo ao original
+git branch algum_nome -> cria uma nova branch com o nome desejado
+git branch -> lista todas as branch existentes no repositório
+git branch -d nome_da_branch -> deleta a branch com o nome expecificado
+git checkout nome_da_branch -> usamos para mudar de uma branch para outra
+git checkout -b nome_da_branch -> usamos para criar e mudar para essa nova branch
+SEMPRE COMMITAR ANTES DE MUDAR DE BRANCH, SENÃO AS MUDANÇÃO TODAS SERÃO TRANSFERIDAS
+SEMPRE CRIAR UMA BRANCH A PARTIR DA MASTER PARA EVITAR COPIAR CÓDIGO ERRADO
+git stash -> é usado para mandar todas as alterações para uma lixeira do git podendo ser recuperado novamente
+git stash list -> mosta a lista de stash do projeto
+git stash apply numero_da_stash ->  recupera os arquivos da stash citada
+git stash show -p numero_da_stash -> mostra as alterações e estão na devida stash
+git stash clear -> limpa todas as stash da lista
+git stash drop numero_da_stash -> limpa a stash mensionada
+git tag -a nome_da_tag -m mensagem_da_tag -> uma tag tem a finalidade de dar um check-point em uma atividade.
+git show -> mostra todas as tag existentes no projeto
+git show nome_da_tag -> mostra os detalhes existentes nessa tag
+git checkout nome_da_tag -> altera o código para o check-point da tag mensionada
+git fefch -> com este comando é utilizado de todos os branchs e tags do projeto que você ainda não conhece
+git remote -v -> nos fornece a origem do repositório
+git diff -> é um comando desinado a mostrar a disferença entre a branch que estou com a master
+git archive --format zip --output arquivos_master.zip mater -> vai baixar todos os arquivos da master para o computador
+Gist é um mini repositório que você pode cirar no github com pequenos códigos para auxiliar posteriormente
+
+**************************************************
+************** O básico de markdown***************
+**************************************************
+usamos o # para criar títulos, podendo usar de 1 a 6 dependendo da hierarquia
+Para colocar um texto em negrito usamos **texto** ou __texto__
+para escrever em itálico usamos *texto* ou _texto_
+Para construir um lista não ordenada usamos *item
+para construir uma lista ordenada usamos 1. item
+Também bodemos construir lista aninhadas
+1. item
+    1. subitem(é preciso colocar 4 espaços na frente do subitem)
+    2. subitem
+para inserirmos imagem em markdown usamos o comando ![texto alt](link da imagem)
+para inserirmos um link no markdown usamos o comando [texto do link](link)
+É possível combinar os dois comando acima e colocar um link em uma imagem
+para representar um código no git usamos 
+''' linguagem
+    código
+    '''
+para inserir lista de tarefas a serem feita no github usamos
+ - [x] tarefa executada
+ - [ ] tarefa não executada
+ - [x] tarefa executada
+ - [ ] tarefa não executada
+
+
+
+
+**************************************************
+*******Programação orientada à objetos************
+**************************************************
+
+
+Este é um arquivo destinado a tentativa de aprender a programar
+orientado a objetos.
+
+o link da playlist é [esta playlist infelizmente foi desativada pelo autor]
+ https://youtube.com/playlist?list=PLAgbpJQADBGLo24x_xBwGtTDO-bjwrFb_&si=FgL4x6VraG3aMzlX
+
+Alguns dicas úteis para programação
+
+01- self indica que o objetos pertence a classe acima ele é entendido como contexto da classe;
+02- é preciso chamar a classe de objeto para que possa acessa-lá;
+03- para definir os atributos no contexto de uma classe usamos o comando __init__ no inicio da classe
+04- __init__ também é chamado de método inicializador.
+05- é uma boa prática nomear as classes e atributos por substantivos
+06- é uma boa prática que os métodos sejam nomeados por verbos
+07- é uma boa prática colocar o tipo que cada variável é, mais detalhes em https://docs.python.org/3/library/typing.html 
+08- ficar atento a lei de responsabilidade única S.O.L.I.D.
+09- o objetivo da aula é discutir variáveis de classe e métodos de
+# classe. A palavra self indica que a variável esta no contêxto 
+# da classe e quando usamos o cls estamos indicando que a variável esta
+# no contêxto da classe. Portanto mudar uma variável de classe
+# implica mudar esta variável em todos os objetos a ela relacionados
+10-

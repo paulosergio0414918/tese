@@ -236,7 +236,6 @@ class SolucaoAdveccao:
 
         return self.u_zero(self.dom.x - self.c*(iteracao+1)*self.dom.dt)
          
-
 class Validacao(SolucaoAdveccao):
         """
         ===========================================================================
@@ -327,7 +326,6 @@ class Validacao(SolucaoAdveccao):
             fig.tight_layout()
             plt.show()
 
-
 class Assimilacao(SolucaoAdveccao):
     """ Classe destinada a coletar as amostras para assimilação."""
     def __init__(self,
@@ -399,7 +397,6 @@ class Assimilacao(SolucaoAdveccao):
 
         return W
     
-
     def matriz_b(self):
         matrizb = np.zeros((dom.N, self.n_amostras))
         for j in range(self.n_amostras):
@@ -407,7 +404,6 @@ class Assimilacao(SolucaoAdveccao):
 
         return matrizb
     
-
     def _matriz_de_diferencas(self, solucao):
         """ Cria uma matriz contendo a diferença entre as amostras e a solução"""
         diferencas = np.zeros((self.dom.N,self.n_amostras))
@@ -458,26 +454,38 @@ class Assimilacao(SolucaoAdveccao):
     def calculo_do_gradiente_estocastico(self, solucao):
         grad = np.zeros(self.dom.N)
         amostra_local = self.sol.u_zero(self.dom.x)
+        mean = np.mean(self.matriz_b(), axis=1)
         for i in range(self.n_amostras):
-            grad += -(1/self.c)*(amostra_local - solucao + (1/self.n_amostras)*self.matriz_b()[:,i])
+            grad += -(1/self.c)*(amostra_local - solucao - (1/self.n_amostras)*mean)
 
         return grad
-
-#########################################
-#### Já inseri o código da parte estocastica
-#### esta calcular a média
-
 
     def gradiente_descendente(self,
                               it:int = 10):
         """Calculo do gradiente descendente considerando n=it iterações"""
         solucao_final = np.zeros(dom.N) #chute inicial
         if self.modo == "numerico":
+            print(f"Calculando o gradiente descencente numérico com {it} iterações")
             for i in range(it):
+                porcentagem = int((i / it) * 100)
+                barra = "█" * (i // 2) + "░" * ((it - i) // 2)
+                print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
                 grad = self.calculo_do_gradiente_numerico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad
+        elif self.modo == "estocastico":
+            print(f"Calculando o gradiente esticastico numérico com {it} iterações")
+            for i in range(it):
+                porcentagem = int((i / it) * 100)
+                barra = "█" * (i // 2) + "░" * ((it - i) // 2)
+                print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
+                grad = self.calculo_do_gradiente_estocastico(solucao = solucao_final)
+                solucao_final = solucao_final - 0.1*grad
         else:
-            for i in range(it):             
+            for i in range(it):
+                print(f"Calculando o gradiente descencente analítico com {it} iterações")
+                porcentagem = int((i / it) * 100)
+                barra = "█" * (i // 2) + "░" * ((it - i) // 2)
+                print(f"\rProgresso: |{barra}| {porcentagem}%", end="")             
                 grad = self.calculo_do_gradiente_analitico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad            
 
@@ -541,22 +549,96 @@ class Assimilacao(SolucaoAdveccao):
 if __name__ == "__main__":
     import dominio
     import construtor_de_graficos as cdg
+    import matplotlib.pyplot as plt
 
     ###### parâmetros #######
-    op = 11
+    op = 16
     ruido = True
     iteracoes = 32
-    amos = 3
+    amos = 8
 
 
     ###### objetos ##########
-    dom = dominio.Dominio()
+    dom = dominio.Dominio(L=2, T=1)
     ass = Assimilacao(dom, modo="analitico", n_amostras = amos)
     sol = SolucaoAdveccao(dom)
     val = Validacao()
     
     ##### lista de testes ##########
-    if op == 14:
+    if op == 16:
+        ass1 = Assimilacao(dom, modo="estocastico", n_amostras = 2)
+        ass2 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=2)
+
+        ass3 = Assimilacao(dom, modo="estocastico", n_amostras = 4)            
+        ass4 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=4)
+
+        ass5 = Assimilacao(dom, modo="estocastico", n_amostras=8)
+        ass6 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras = 8)
+
+        ass7 = Assimilacao(dom, modo="estocastico", n_amostras=16)
+        ass8 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=16)
+
+
+        import matplotlib.pyplot as plt
+        fig, axs = plt.subplots(2, 2)
+        axs[0, 0].set_title(f"Métodos com duas amostras e {iteracoes} iterações.")
+        axs[0, 0].plot(dom.x, ass1.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
+        axs[0, 0].plot(dom.x, ass2.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)
+        axs[0, 0].legend()
+        axs[0, 0].set_xlabel("x")
+        axs[0, 0].set_ylabel("u_0(x)")
+
+
+        axs[0, 1].set_title(f"Métodos com quatro amostras e {iteracoes} iterações.")
+        axs[0, 1].plot(dom.x, ass3.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
+        axs[0, 1].plot(dom.x, ass4.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)            
+        axs[0, 1].legend()
+        axs[0, 1].set_xlabel("x")
+        axs[0, 1].set_ylabel("u_0(x)")
+
+        axs[1, 0].set_title(f"Métodos com oito amostras e {iteracoes} iterações.")
+        axs[1, 0].plot(dom.x, ass5.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
+        axs[1, 0].plot(dom.x, ass6.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)            
+        axs[1, 0].legend()
+        axs[1, 0].set_xlabel("x")
+        axs[1, 0].set_ylabel("u_0(x)")
+
+        axs[1, 1].set_title(f"Métodos com dezesseis amostras e {iteracoes} iterações.")
+        axs[1, 1].plot(dom.x, ass7.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
+        axs[1, 1].plot(dom.x, ass8.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)            
+        axs[1, 1].legend()
+        axs[1, 1].set_xlabel("x")
+        axs[1, 1].set_ylabel("u_0(x)")
+        fig.tight_layout()
+
+
+
+        #fig.legend()
+        plt.show()
+
+    elif op == 15:
+        ass1 = Assimilacao(dom, modo="analitico", n_amostras = amos)
+        ass2 = Assimilacao(dom, modo="numerico", n_amostras = amos)
+        ass3 = Assimilacao(dom, modo="estocastico", n_amostras = amos)
+        grad_analitico = ass1.gradiente_descendente()
+        grad_numerico = ass2.gradiente_descendente()
+        grad_estocastico = ass3.gradiente_descendente()
+
+        plt.figure(figsize=(10, 6))
+
+        plt.plot(dom.x, grad_analitico, label='Gradiente Analítico')
+        plt.plot(dom.x, grad_numerico, label='Gradiente Numérico')
+        plt.plot(dom.x, grad_estocastico, label='Gradiente Estocástico')
+
+        plt.xlabel('x')
+        plt.ylabel('u_0(x)')
+        plt.title(f'Assimilação de {amos} amostras e {iteracoes} iterações')
+        plt.legend()
+        plt.grid(True)
+
+        plt.show()
+
+    elif op == 14: # apresenta os movimentos brownianos em cada amostra
         matriz = ass.matriz_b()
 
         fig = plt.figure(figsize=(10, 8))
@@ -609,7 +691,7 @@ if __name__ == "__main__":
             d3 = ass3.diferenca(iter = iteracoes)
             ass4 = Assimilacao(dom, modo="numerico", ruido= True, n_amostras=4)
             d4 = ass4.diferenca(iter = iteracoes)
-            ass5 = Assimilacao(dom, modo="analitico")
+            ass5 = Assimilacao(dom, modo="analitico", n_amostras= 2)
             d5 = ass5.diferenca(iter = iteracoes)
             ass6 = Assimilacao(dom, modo="analitico",  n_amostras=4) 
             d6 = ass6.diferenca(iter = iteracoes)           
