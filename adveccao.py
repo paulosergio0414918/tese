@@ -343,7 +343,6 @@ class Assimilacao(SolucaoAdveccao):
         self.c = c
         self.condicao = condicao
         self.passos = [int((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2) for i in range(self.n_amostras)]
-        #self.passos = [int(self.dom.M - np.ceil(self.dom.N/(4*self.dom.L))*i) for i in range(self.n_amostras)]
         self.ruido = ruido
         self.sol = SolucaoAdveccao(self.dom)
         self.modo = modo
@@ -352,7 +351,8 @@ class Assimilacao(SolucaoAdveccao):
         self.vetor_custo = []
         self.vetor_ruido = [random.uniform(0, 0.0005) for i in range(self.dom.N)]
         self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
-        
+        self.tj = [((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2)*dom.dt for i in range(self.n_amostras)]
+
         self.matriz_de_amostras_ruido()
 
     def matriz_de_amostras(self):
@@ -384,7 +384,30 @@ class Assimilacao(SolucaoAdveccao):
         """ Solução do problema backward."""
         cfl = self.sol.CFL()
         return 0.5*((1 - cfl)*np.roll(x,1) + (1 + cfl)*np.roll(x,-1))
+
+    def bronwniano(self,
+                   t: float = 0,
+                   seed: int = 100
+                   ):
+        
+        np.random.seed(seed) 
+        incrementos = np.sqrt(dom.T-t)*np.sqrt(dom.T/dom.M)*np.random.randn(dom.N)        
+        W = np.zeros(dom.N)
+        W[0] = incrementos[0]
+        for i in range(1, dom.N):
+            W[i] = W[i-1] + incrementos[i]  
+
+        return W
     
+
+    def matriz_b(self):
+        matrizb = np.zeros((dom.N, self.n_amostras))
+        for j in range(self.n_amostras):
+            matrizb[:, j] = self.bronwniano(t = self.tj[j])
+
+        return matrizb
+    
+
     def _matriz_de_diferencas(self, solucao):
         """ Cria uma matriz contendo a diferença entre as amostras e a solução"""
         diferencas = np.zeros((self.dom.N,self.n_amostras))
@@ -431,7 +454,20 @@ class Assimilacao(SolucaoAdveccao):
                 grad += -(1/self.c)*(amostra_local - solucao) 
 
         return grad
-        
+    
+    def calculo_do_gradiente_estocastico(self, solucao):
+        grad = np.zeros(self.dom.N)
+        amostra_local = self.sol.u_zero(self.dom.x)
+        for i in range(self.n_amostras):
+            grad += -(1/self.c)*(amostra_local - solucao + (1/self.n_amostras)*self.matriz_b()[:,i])
+
+        return grad
+
+#########################################
+#### Já inseri o código da parte estocastica
+#### esta calcular a média
+
+
     def gradiente_descendente(self,
                               it:int = 10):
         """Calculo do gradiente descendente considerando n=it iterações"""
@@ -501,15 +537,16 @@ class Assimilacao(SolucaoAdveccao):
         return diferenca
 
 
+
 if __name__ == "__main__":
     import dominio
     import construtor_de_graficos as cdg
 
     ###### parâmetros #######
-    op = 12
+    op = 11
     ruido = True
     iteracoes = 32
-    amos = 5
+    amos = 3
 
 
     ###### objetos ##########
@@ -518,7 +555,28 @@ if __name__ == "__main__":
     sol = SolucaoAdveccao(dom)
     val = Validacao()
     
-    if op == 12: #Grafico de todas as amostras
+    ##### lista de testes ##########
+    if op == 14:
+        matriz = ass.matriz_b()
+
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        for i in range(amos):
+            ax.plot(np.full_like(dom.x, i+1), dom.x, matriz[:, i], linewidth=2)
+
+        ax.set_xlabel('Amostra')
+        ax.set_ylabel('t')
+        ax.set_zlabel('W')
+        ax.set_xticks([i for i in range(amos)])
+        ax.view_init(25, -60)
+        plt.show()
+
+    elif op == 13: #imprimir os passos das amostras
+    
+        print(ass.passos)
+
+    elif op == 12: #Grafico de todas as amostras
         import numpy as np
         import matplotlib.pyplot as plt
         from mpl_toolkits.mplot3d import Axes3D
@@ -540,8 +598,9 @@ if __name__ == "__main__":
         plt.show()
 
     elif op == 11: # Constatação do resultado teórico para advecção
-            k = ass.E
-            d1 = ass.diferenca(iter = iteracoes)
+            ass1 = Assimilacao(dom, modo="analitico", ruido= True, n_amostras=2)                        
+            k = ass1.E
+            d1 = ass1.diferenca(iter = iteracoes)
             ass2 = Assimilacao(dom, modo="analitico", ruido= True, n_amostras=4)            
             m = ass2.E
             d2 = ass2.diferenca(iter = iteracoes)
@@ -562,7 +621,7 @@ if __name__ == "__main__":
 
             import matplotlib.pyplot as plt
             fig, axs = plt.subplots(2, 2)
-            axs[0, 0].set_title(f"Método analítico com duas amostras com ruido")
+            axs[0, 0].set_title(f"Método analítico com duas amostras")
             axs[0, 0].scatter([i+1 for i in range(iteracoes)], d1, label="Com ruido", linewidth=1)
             axs[0, 0].scatter([i+1 for i in range(iteracoes)], d5, label="Sem ruido", linewidth=1)
             axs[0, 0].scatter([i+1 for i in range(iteracoes)], [k for _ in range(iteracoes)], label="|E|", linewidth=1)

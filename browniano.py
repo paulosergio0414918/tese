@@ -2,6 +2,7 @@ import numpy as np
 import random
 from adveccao import Assimilacao
 from dominio import Dominio
+from condicoes_iniciais import Funcoes2d
 from rich.traceback import install
 install()
 
@@ -34,38 +35,41 @@ class MovimentoBrowniano(Assimilacao):
     def __init__(self,
                  dom: Dominio,
                  M: int,
-                 T: int = 1,
+                 T: int = 2,
+                 n_amostras: int = 2 
                 ):
         
         self.dom = dom
         self.T = T # tempo de execução do movimento Browniano
         self.M = M
+        self.n_amostras = n_amostras
         self.dt = self.T/self.M
+        self.tj = [((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2)*self.dt for i in range(self.n_amostras)]
 
+
+   
+    def bronwniano(self,
+                   t: float = 0,
+                   seed: int = 100
+                   ):
         
-    
-    def incrementos(self, t:float = 0):    
-        return np.sqrt(self.T-t)*np.sqrt(self.T/self.M)*np.random.randn(self.M)
-    
-    def bronwniano(self):
-        np.random.seed(100)
-        
+        np.random.seed(seed) 
+        incrementos = np.sqrt(self.T-t)*np.sqrt(self.T/self.M)*np.random.randn(self.M)        
         W = np.zeros(self.M)
-        W[0] = self.incrementos()[0]
-        for i in range(1, self.M-1):
-            print(i)
-            W[i] = W[i-1]+self.incrementos()[i]  
-        
+        W[0] = incrementos[0]
+        for i in range(1, self.M):
+            W[i] = W[i-1] + incrementos[i]  
 
-              
         return W
     
-    def matriz(self):
-        matrizb = np.zeros((len(dom.x), len(self.n_amostras)))
-        for j, tj in enumerate(self.n_amostras):
-            matrizb[:, j] = np.random.normal(0,np.sqrt(dom.T - tj), len(dom.x))
+
+    def matriz_b(self):
+        matrizb = np.zeros((self.M, self.n_amostras))
+        for j in range(self.n_amostras):
+            matrizb[:, j] = self.bronwniano(t = self.tj[j])
+
+        return matrizb
     
-    " O movimento browniano ocorre no tempo t e não no espaço. CUIDADO!"
 
 
 
@@ -78,11 +82,23 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     #from mpl_toolkits.mplot3d import Axes3D
     
+    amos = 10
     dom = dominio.Dominio()
-    #ass = Assimilacao()
-    mov = MovimentoBrowniano(dom, M = 5)
+    ass = Assimilacao(dom = dom)
+    mov = MovimentoBrowniano(dom, M = dom.M, n_amostras=amos)
 
-    print(f'Valor dos brownianos {mov.bronwniano()}')
-    print(f'Valores dos incrementos {mov.incrementos()}')
-    
+      
+    matriz = mov.matriz()
 
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    for i in range(amos):
+        ax.plot(np.full_like(dom.t, i+1), dom.t, matriz[:, i], linewidth=2)
+
+    ax.set_xlabel('Amostra')
+    ax.set_ylabel('t')
+    ax.set_zlabel('W')
+    ax.set_xticks([i for i in range(amos)])
+    ax.view_init(25, -60)
+    plt.show()

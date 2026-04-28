@@ -114,8 +114,8 @@ class SolucaoAguasRasas:
         #inicialializando o método que usa dois passos desconectados no tempo
         matriz_eta = np.zeros((self.dom.N, 2))
         matriz_u = np.zeros((self.dom.N, 2))
-        #print(f"tamanha da matriz eta{matriz_eta.shape}")
-        #print(f"tamanha da matriz u {matriz_u.shape}")
+        #print(f"tamanho da matriz eta{matriz_eta.shape}")
+        #print(f"tamanho da matriz u {matriz_u.shape}")
         #primeira coluna com as condições inciais
         matriz_eta[:,0] = eta
         matriz_u[:,0] = u
@@ -452,7 +452,7 @@ if __name__ == "__main__":
     dom = Dominio(M=4096, N=1024)
     sol = SolucaoAguasRasas(dom)
     val = Validacao(dom)
-    op = 3
+    op = 2
     it = 256
 
 
