@@ -465,27 +465,27 @@ class Assimilacao(SolucaoAdveccao):
         """Calculo do gradiente descendente considerando n=it iterações"""
         solucao_final = np.zeros(dom.N) #chute inicial
         if self.modo == "numerico":
-            print(f"Calculando o gradiente descencente numérico com {it} iterações")
+            #print(f"Calculando o gradiente descencente numérico com {it} iterações")
             for i in range(it):
-                porcentagem = int((i / it) * 100)
-                barra = "█" * (i // 2) + "░" * ((it - i) // 2)
-                print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
+                #porcentagem = int((i / it) * 100)
+                #barra = "█" * (i // 2) + "░" * ((it - i) // 2)
+                #print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
                 grad = self.calculo_do_gradiente_numerico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad
         elif self.modo == "estocastico":
-            print(f"Calculando o gradiente esticastico numérico com {it} iterações")
+            #print(f"Calculando o gradiente esticastico numérico com {it} iterações")
             for i in range(it):
-                porcentagem = int((i / it) * 100)
-                barra = "█" * (i // 2) + "░" * ((it - i) // 2)
-                print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
+                #porcentagem = int((i / it) * 100)
+                #barra = "█" * (i // 2) + "░" * ((it - i) // 2)
+                #print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
                 grad = self.calculo_do_gradiente_estocastico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad
         else:
+           #print(f"Calculando o gradiente descencente analítico com {it} iterações")
             for i in range(it):
-                print(f"Calculando o gradiente descencente analítico com {it} iterações")
-                porcentagem = int((i / it) * 100)
-                barra = "█" * (i // 2) + "░" * ((it - i) // 2)
-                print(f"\rProgresso: |{barra}| {porcentagem}%", end="")             
+                #porcentagem = int((i / it) * 100)
+                #barra = "█" * (i // 2) + "░" * ((it - i) // 2)
+                #print(f"\rProgresso: |{barra}| {porcentagem}%", end="")             
                 grad = self.calculo_do_gradiente_analitico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad            
 
@@ -540,7 +540,7 @@ class Assimilacao(SolucaoAdveccao):
                   iter: int = 10):
         diferenca = []
         for i in range(iter):
-            diferenca += [np.linalg.norm(self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i))]
+            diferenca += [np.mean(self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i))]
 
         return diferenca
 
@@ -552,9 +552,9 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     ###### parâmetros #######
-    op = 16
+    op = 17
     ruido = True
-    iteracoes = 32
+    iteracoes = 128
     amos = 8
 
 
@@ -565,19 +565,46 @@ if __name__ == "__main__":
     val = Validacao()
     
     ##### lista de testes ##########
-    if op == 16:
+    if op == 17:
+        ass1 = Assimilacao(dom, modo="estocastico", n_amostras = 2)
+        ass2 = Assimilacao(dom, modo="estocastico", n_amostras = 4)
+        ass3 = Assimilacao(dom, modo="estocastico", n_amostras = 8)
+        ass4 = Assimilacao(dom, modo="estocastico", n_amostras = 16)
+
+        testes = 8
+        from rich import print
+        from rich.table import Table
+        tab = Table(title = "Erro de aproximação")
+        tab.add_column("n_iterações", justify = "center")
+        tab.add_column("n_amostras = 2", justify = "center")
+        tab.add_column("n_amostras = 4", justify = "center")
+        tab.add_column("n_amostras = 8", justify = "center")
+        tab.add_column("n_amostras = 16", justify = "center")
+
+        for j in range(testes):
+            tab.add_row(f"{2**j}",f"{np.mean(ass1.diferenca(iter = 2**j))}", 
+                        f"{ass2.diferenca(iter = 2**j)[-1]}", 
+                        f"{ass3.diferenca(iter = 2**j)[-1]}", 
+                        f"{ass4.diferenca(iter = 2**j)[-1]}")
+
+
+        print(tab)
+
+
+
+
+    elif op == 16:
         ass1 = Assimilacao(dom, modo="estocastico", n_amostras = 2)
         ass2 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=2)
-
+        
         ass3 = Assimilacao(dom, modo="estocastico", n_amostras = 4)            
         ass4 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=4)
-
+        
         ass5 = Assimilacao(dom, modo="estocastico", n_amostras=8)
         ass6 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras = 8)
-
+        
         ass7 = Assimilacao(dom, modo="estocastico", n_amostras=16)
         ass8 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=16)
-
 
         import matplotlib.pyplot as plt
         fig, axs = plt.subplots(2, 2)
@@ -612,7 +639,7 @@ if __name__ == "__main__":
         fig.tight_layout()
 
 
-
+        
         #fig.legend()
         plt.show()
 
