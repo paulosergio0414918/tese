@@ -383,6 +383,17 @@ class Assimilacao(SolucaoAdveccao):
         cfl = self.sol.CFL()
         return 0.5*((1 - cfl)*np.roll(x,1) + (1 + cfl)*np.roll(x,-1))
 
+    
+    # aproximação do ruido branco segundo 
+    #Allen, E. J., Novosel, S. J., & Zhang, Z. (1998). Finite element and difference approximation of some linear stochastic partial differential equations. Stochastics and Stochastic Reports, 64(1–2), 117–142. https://doi.org/10.1080/17442509808834159
+
+    def white_noise(self,
+                    scale: float = 0.1
+                    ):
+
+        return scale*max(self.sol.solucao_analitica())*np.sqrt(self.dom.dx)*np.random.randn(self.dom.N)
+        
+    
     def bronwniano(self,
                    t: float = 0,
                    seed: int = 100
@@ -552,20 +563,64 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     ###### parâmetros #######
-    op = 17
+    op = 0
     ruido = True
     iteracoes = 128
     amos = 8
 
 
     ###### objetos ##########
-    dom = dominio.Dominio(L=2, T=1)
+    dom = dominio.Dominio()
     ass = Assimilacao(dom, modo="analitico", n_amostras = amos)
     sol = SolucaoAdveccao(dom)
     val = Validacao()
     
     ##### lista de testes ##########
-    if op == 17:
+    if op == 18: #reproducao imagem 2.1 Allen, E. J., Novosel, S. J., & Zhang, Z. (1998)
+        dominio = [dominio.Dominio(L=1, L0=0, N=2**(k+2)) for k in range(8)]
+        ass = [Assimilacao(dom = dominio[i]) for i in range(8)]
+        import matplotlib.pyplot as plt
+        fig, axs = plt.subplots(4, 2)
+        axs[0, 0].plot(dominio[0].x, ass[0].white_noise(), drawstyle='steps-post', label = f"n = {2**2}",linewidth=1)
+        axs[0, 0].legend()
+        axs[0, 0].set_xlabel("x")
+
+        axs[0, 1].plot(dominio[1].x, ass[1].white_noise(), drawstyle='steps-post', label = f"n = {2**3}", linewidth=1)
+        axs[0, 1].legend()
+        axs[0, 1].set_xlabel("x")
+
+        axs[1, 0].plot(dominio[2].x, ass[2].white_noise(), drawstyle='steps-post', label = f"n = {2**4}",  linewidth=1)
+        axs[1, 0].legend()
+        axs[1, 0].set_xlabel("x")
+
+        axs[1, 1].plot(dominio[3].x, ass[3].white_noise(), drawstyle='steps-post', label = f"n = {2**5}",  linewidth=1)
+        axs[1, 1].legend()
+        axs[1, 1].set_xlabel("x")
+        
+        axs[2, 0].plot(dominio[4].x, ass[4].white_noise(), drawstyle='steps-post', label = f"n = {2**6}",  linewidth=1)
+        axs[2, 0].legend()
+        axs[2, 0].set_xlabel("x")
+
+        axs[2, 1].plot(dominio[5].x, ass[5].white_noise(), drawstyle='steps-post', label = f"n = {2**7}",  linewidth=1)
+        axs[2, 1].legend()
+        axs[2, 1].set_xlabel("x")
+        fig.tight_layout()
+
+        axs[3, 0].plot(dominio[6].x, ass[6].white_noise(), drawstyle='steps-post', label = f"n = {2**8}",  linewidth=1)
+        axs[3, 0].legend()
+        axs[3, 0].set_xlabel("x")
+
+        axs[3, 1].plot(dominio[7].x, ass[7].white_noise(), drawstyle='steps-post', label = f"n = {2**9}",  linewidth=1)
+        axs[3, 1].legend()
+        axs[3, 1].set_xlabel("x")
+        fig.tight_layout()
+
+
+        
+        #fig.legend()
+        plt.show() 
+    
+    elif op == 17:
         ass1 = Assimilacao(dom, modo="estocastico", n_amostras = 2)
         ass2 = Assimilacao(dom, modo="estocastico", n_amostras = 4)
         ass3 = Assimilacao(dom, modo="estocastico", n_amostras = 8)
@@ -589,9 +644,6 @@ if __name__ == "__main__":
 
 
         print(tab)
-
-
-
 
     elif op == 16:
         ass1 = Assimilacao(dom, modo="estocastico", n_amostras = 2)

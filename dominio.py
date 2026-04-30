@@ -13,6 +13,7 @@ class Dominio:
                 t0: float = 0.0,
                 T: float = 2.0,
                 L: float = 4.0,
+                L0: float = None,
                 N: int = 4096,
                 M: int = 1024,
                 dt: float = None,
@@ -22,10 +23,15 @@ class Dominio:
 
     self.t0 = t0   #Tempo inicial (segundos)
     self.T = T     #Tempo final (segundos)
-    self.L = L     #Tamanho do intervalo (metros)
+    self.L = L     #Metade do tamanho do intervalo espacial simétrico (metros)
+    self.L0 = -self.L if L0 is None else L0   #Início do intervalo espacial não simétrico
     self.N = N     #Número de passos no espaço
     self.M = M     #Número de passos no tempo
     self.validacao_cfl()
+
+    #Garantindo a simetria do intervalo
+    if L0 is None:
+      self.L0 = -self.L
 
     #Discretização no tempo
     if self.M == None:
@@ -40,19 +46,19 @@ class Dominio:
 
     #Discretização no espaço
     if self.N == None:
-      self.N = 2*L/dx
+      self.N = (self.L- self.L0)/dx
       if not self.N.is_integer():
         print("Cuidado! Com esse dx o número de pontos no espaço não é inteiro!!")
 
     else:
-      self.dx = 2*L/self.N
+      self.dx = (self.L-self.L0)/self.N
 
-    self.x = np.linspace(-L, L, self.N)  #Pontos no espaço
+    self.x = np.linspace(self.L0, self.L, self.N)  #Pontos no espaço
 
 
     # discretização com malha descentralizada
-    self.x_centro = np.array([-self.L+i*self.dx for i in range(self.N)])
-    self.x_borda = np.array([-self.L+(i+0.5)*self.dx for i in range(self.N)])
+    self.x_centro = np.array([self.L0+i*self.dx for i in range(self.N)])
+    self.x_borda = np.array([self.L0+(i+0.5)*self.dx for i in range(self.N)])
 
     self.cfl = (self.T*self.N)/(2*self.L*self.M)
 
@@ -66,7 +72,7 @@ class Dominio:
       if m is None:
         m = self.M
 
-      lam = ((self.T-self.t0)*n)/(2*self.L*m)
+      lam = ((self.T-self.t0)*n)/((self.L-self.L0)*m)
       if lam >1 or lam<0:
         return "Instável"
       else:
