@@ -437,7 +437,57 @@ class Validacao(SolucaoAguasRasas):
         plt.show()
      
 
+class Assimilacao(SolucaoAguasRasas):
 
+    def __init__(self,
+                 dom: Dominio, # um domínio criado pela classe Dominio
+                 c: float = 1, #velocidade de advecção
+                 n_amostras: int = 2,
+                 condicao: str = "condicao_paper",
+                 ruido: bool = False,
+                 modo: str = "analitico"
+                 ):  
+        self.n_amostras = n_amostras
+        self.dom = dom
+        self.c = c
+        self.condicao = condicao
+        self.passos = [int((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2) for i in range(self.n_amostras)]
+        self.ruido = ruido
+        self.sol = SolucaoAguasRasas(self.dom)
+        self.modo = modo
+        self._matriz_com_amostras = None
+        self._matriz_com_amostras_ruido = None
+        self.vetor_custo = []
+        self.vetor_ruido = [random.uniform(0, 0.005) for i in range(self.dom.N)]
+        self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
+        self.tj = [((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2)*dom.dt for i in range(self.n_amostras)]
+
+        self.matriz_de_amostras_ruido()
+
+    def matriz_de_amostras(self):
+        #if self._matriz_com_amostras is None:
+        """Gera uma matriz contendo as amostras sem perturbação"""
+        matriz = np.zeros((self.dom.N ,self.n_amostras))
+        solu = SolucaoAguasRasas(self.dom, self.condicao)
+        
+        for i, passo in enumerate(self.passos):
+            
+            matriz[:, i] = solu.solucao_analitica_eta(iteracao=passo)
+            
+        self._matriz_com_amostras = matriz
+        return matriz
+        
+    def matriz_de_amostras_ruido(self):
+        """Gera uma matriz contendo as amostras com perturbação """
+        #if self._matriz_com_amostras_ruido is None:
+        if self._matriz_com_amostras is  None:
+            self.matriz_de_amostras()     
+        matriz_com_ruido = self._matriz_com_amostras.copy()
+        
+        for j in range(self.n_amostras):
+            matriz_com_ruido[:,j] += self.vetor_ruido
+        self._matriz_com_amostras_ruido = matriz_com_ruido
+        return matriz_com_ruido    
 
 
 
@@ -452,7 +502,7 @@ if __name__ == "__main__":
     dom = Dominio(M=4096, N=1024)
     sol = SolucaoAguasRasas(dom)
     val = Validacao(dom)
-    op = 2
+    op = 0
     it = 256
 
 

@@ -1,7 +1,8 @@
 import numpy as np
-from rich.traceback import install
 import random
 import matplotlib.pyplot as plt
+from scipy.optimize import minimize_scalar
+from rich.traceback import install
 install()
 
 import condicoes_iniciais as ci
@@ -281,7 +282,6 @@ class Validacao(SolucaoAdveccao):
             self.testes = testes
             #import dominio
 
-
         def tabela(self):
             """ Apresenta uma tabela com os erros de aproximação """
             import math
@@ -347,7 +347,7 @@ class Assimilacao(SolucaoAdveccao):
         self._matriz_com_amostras = None
         self._matriz_com_amostras_ruido = None
         self.vetor_custo = []
-        self.vetor_ruido = [random.uniform(0, 0.0005) for i in range(self.dom.N)]
+        self.vetor_ruido = [random.uniform(0, 0.005) for i in range(self.dom.N)]
         self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
         self.tj = [((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2)*dom.dt for i in range(self.n_amostras)]
 
@@ -392,8 +392,7 @@ class Assimilacao(SolucaoAdveccao):
                     ):
 
         return scale*max(self.sol.solucao_analitica())*np.sqrt(self.dom.dx)*np.random.randn(self.dom.N)
-        
-    
+            
     def bronwniano(self,
                    t: float = 0,
                    seed: int = 100
@@ -428,6 +427,8 @@ class Assimilacao(SolucaoAdveccao):
             else:
                 diferencas[:, i] = solucao_local - self.matriz_de_amostras()[:,i]
         return diferencas
+
+#preciso inserir um método para diferenças considerando a solução analítica
 
     def calculo_do_gradiente_numerico(self, solucao):
         """Cálculo do gradiente conforme Kalnay(2002) pg 183."""
@@ -471,32 +472,46 @@ class Assimilacao(SolucaoAdveccao):
 
         return grad
 
+    def gradiente_descendente_otimizado(self, it: int = 10):
+        """Gradiente descendente com busca de linha (passo ótimo a cada iteração)."""
+        solucao_final = np.zeros(self.dom.N)  # chute inicial
+
+        for _ in range(it):
+            # Calcula o gradiente conforme o modo escolhido
+            if self.modo == "numerico":
+                grad = self.calculo_do_gradiente_numerico(solucao=solucao_final)
+            elif self.modo == "estocastico":
+                grad = self.calculo_do_gradiente_estocastico(solucao=solucao_final)
+            else:  # analitico
+                grad = self.calculo_do_gradiente_analitico(solucao=solucao_final)
+
+            # Função que calcula o custo para um dado passo alpha
+            def custo_alpha(alpha):
+                return self.custo_solucao(solucao_final - alpha * grad)
+
+            # Encontra o alpha ótimo no intervalo [0, 1] (ajuste se necessário)
+            res = minimize_scalar(custo_alpha, bounds=(0, 1), method='bounded',  options={'maxiter': 5})
+            alpha_otimo = res.x
+
+            # Atualiza a solução com o passo encontrado
+            solucao_final = solucao_final - alpha_otimo * grad
+
+        return solucao_final
+    
     def gradiente_descendente(self,
                               it:int = 10):
         """Calculo do gradiente descendente considerando n=it iterações"""
         solucao_final = np.zeros(dom.N) #chute inicial
         if self.modo == "numerico":
-            #print(f"Calculando o gradiente descencente numérico com {it} iterações")
             for i in range(it):
-                #porcentagem = int((i / it) * 100)
-                #barra = "█" * (i // 2) + "░" * ((it - i) // 2)
-                #print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
                 grad = self.calculo_do_gradiente_numerico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad
         elif self.modo == "estocastico":
-            #print(f"Calculando o gradiente esticastico numérico com {it} iterações")
             for i in range(it):
-                #porcentagem = int((i / it) * 100)
-                #barra = "█" * (i // 2) + "░" * ((it - i) // 2)
-                #print(f"\rProgresso: |{barra}| {porcentagem}%", end="")
                 grad = self.calculo_do_gradiente_estocastico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad
         else:
-           #print(f"Calculando o gradiente descencente analítico com {it} iterações")
             for i in range(it):
-                #porcentagem = int((i / it) * 100)
-                #barra = "█" * (i // 2) + "░" * ((it - i) // 2)
-                #print(f"\rProgresso: |{barra}| {porcentagem}%", end="")             
                 grad = self.calculo_do_gradiente_analitico(solucao = solucao_final)
                 solucao_final = solucao_final - 0.1*grad            
 
@@ -554,6 +569,21 @@ class Assimilacao(SolucaoAdveccao):
             diferenca += [np.mean(self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i))]
 
         return diferenca
+    
+    def custo_solucao(self, solucao):
+        """Calcula o custo J(x) para uma dada solução (sem gradiente)."""
+        custo = 0.0
+        for i, passo in enumerate(self.passos):
+            sol_propagada = solucao.copy()
+            for _ in range(passo):
+                sol_propagada = self.sol.Lax_Friedrichs(sol_propagada)
+            if self.ruido:
+                obs = self._matriz_com_amostras_ruido[:, i]
+            else:
+                obs = self._matriz_com_amostras[:, i]
+            diff = sol_propagada - obs
+            custo += 0.5 * np.dot(diff, diff)
+        return custo
 
 
 
@@ -563,10 +593,10 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     ###### parâmetros #######
-    op = 0
+    op = 19
     ruido = True
-    iteracoes = 128
-    amos = 8
+    iteracoes = 16
+    amos = 2
 
 
     ###### objetos ##########
@@ -576,7 +606,252 @@ if __name__ == "__main__":
     val = Validacao()
     
     ##### lista de testes ##########
-    if op == 18: #reproducao imagem 2.1 Allen, E. J., Novosel, S. J., & Zhang, Z. (1998)
+    if op == 19: # Grafico das amostras em 3d
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D
+        from matplotlib.animation import FuncAnimation
+
+        # Definindo a função
+        def u(x, t):
+            return (1/20) * np.exp(-10 * (x - t)**2)
+
+        # ============================================
+        # PARÂMETROS
+        # ============================================
+        x_const = 1.0
+        t_min, t_max = 0, 2
+
+        # Domínios para o gráfico 3D
+        x = np.linspace(-1, 3, 100)
+        t = np.linspace(t_min, t_max, 100)
+
+        # Criando a malha
+        X, T = np.meshgrid(x, t)
+        U = u(X, T)
+
+        # Dados para a curva x = 1
+        t_curve = t
+        u_curve = u(x_const, t_curve)
+        x_const_array = np.full_like(t_curve, x_const)
+
+        # Dados para a animação 2D (mais pontos para suavidade)
+        t_anim = np.linspace(t_min, t_max, 300)
+        u_at_x1 = u(x_const, t_anim)
+
+        # Ponto de máximo (para referência)
+        t_pico = x_const
+        u_pico = u(x_const, t_pico)
+
+        # ============================================
+        # CRIAÇÃO DA FIGURA COM DOIS SUBPLOTS
+        # ============================================
+        fig = plt.figure(figsize=(16, 8))
+
+        # Subplot 1: Gráfico 3D (esquerda)
+        ax3d = fig.add_subplot(1, 2, 1, projection='3d')
+
+        # Subplot 2: Animação 2D (direita)
+        ax2d = fig.add_subplot(1, 2, 2)
+
+        # ============================================
+        # GRÁFICO 3D
+        # ============================================
+        # Plotando a superfície
+        surf = ax3d.plot_surface(X, T, U, cmap='viridis', alpha=0.7, 
+                                linewidth=0, antialiased=True)
+
+        # Plotando a curva para x = 1 constante
+        curve_line, = ax3d.plot(x_const_array, t_curve, u_curve, 
+                                color='red', linewidth=2.5, 
+                                label=f'x = {x_const}')
+
+        # Ponto animado no gráfico 3D (vai acompanhar a animação 2D)
+        point_3d, = ax3d.plot([], [], [], 'ro', markersize=8, 
+                            markeredgecolor='black', 
+                            markeredgewidth=1.5, zorder=10)
+
+        # Linha vertical conectando o ponto ao plano base
+        vertical_line, = ax3d.plot([], [], [], 'gray', linewidth=1, 
+                                alpha=0.5, linestyle='--')
+
+        # Configurando o gráfico 3D
+        ax3d.set_xlabel('x (Posição)', fontsize=10, labelpad=8)
+        ax3d.set_ylabel('t (Tempo)', fontsize=10, labelpad=8)
+        ax3d.set_zlabel('u(x,t)', fontsize=10, labelpad=8)
+        ax3d.set_title('Superfície 3D: u(x,t) = (1/20)·e^(-10·(x-t)²)\n'
+                    f'Curva para x = {x_const} (vermelha)', 
+                    fontsize=10, pad=15)
+
+        ax3d.set_xlim(-1, 3)
+        ax3d.set_ylim(t_min, t_max)
+        ax3d.set_zlim(0, 0.052)
+        ax3d.view_init(elev=25, azim=55)
+        ax3d.grid(True, alpha=0.2)
+        ax3d.legend(loc='upper left', fontsize=8)
+
+        # Barra de cores
+        cbar = fig.colorbar(surf, ax=ax3d, shrink=0.6, aspect=15, pad=0.1)
+        cbar.set_label('Amplitude', fontsize=9)
+
+        # ============================================
+        # GRÁFICO 2D (ANIMAÇÃO)
+        # ============================================
+        # Curva estática de u(1,t)
+        ax2d.plot(t_anim, u_at_x1, 'b-', linewidth=2, alpha=0.6, 
+                label=f'u({x_const}, t)')
+
+        # Preenchimento sob a curva
+        ax2d.fill_between(t_anim, 0, u_at_x1, alpha=0.2, color='blue')
+
+        # Ponto animado no gráfico 2D
+        point_2d, = ax2d.plot([], [], 'ro', markersize=10, 
+                            markeredgecolor='black', 
+                            markeredgewidth=1.5, zorder=5)
+
+        # Linha vertical animada no gráfico 2D
+        vertical_line_2d, = ax2d.plot([], [], 'r--', linewidth=1.5, alpha=0.5)
+
+        # Linha de referência do pico
+        ax2d.axvline(x=t_pico, color='red', linestyle='--', alpha=0.4, 
+                    linewidth=1, label=f'Pico em t = {t_pico}')
+
+        # Ponto estático do pico (referência)
+        ax2d.scatter([t_pico], [u_pico], color='darkred', s=50, 
+                    edgecolor='black', linewidth=1, alpha=0.5, zorder=3)
+
+        # Textos informativos
+        time_text = ax2d.text(0.02, 0.95, '', transform=ax2d.transAxes, 
+                            fontsize=10, verticalalignment='top',
+                            bbox=dict(boxstyle='round', facecolor='wheat', 
+                                    alpha=0.8, edgecolor='orange'))
+
+        value_text = ax2d.text(0.02, 0.85, '', transform=ax2d.transAxes, 
+                            fontsize=10, verticalalignment='top',
+                            bbox=dict(boxstyle='round', facecolor='lightblue', 
+                                        alpha=0.8, edgecolor='blue'))
+
+        # Configurando o gráfico 2D
+        ax2d.set_xlabel('Tempo (t)', fontsize=11)
+        ax2d.set_ylabel(f'u({x_const}, t) - Amplitude', fontsize=11)
+        ax2d.set_title(f'Evolução Temporal no Ponto x = {x_const}\n'
+                    f'Animação: ponto se movendo ao longo da curva', 
+                    fontsize=10, pad=15)
+        ax2d.set_xlim(t_min, t_max)
+        ax2d.set_ylim(0, 0.052)
+        ax2d.grid(True, alpha=0.3, linestyle='--')
+        ax2d.legend(loc='upper right', fontsize=8)
+        ax2d.set_facecolor('#f8f9fa')
+        ax2d.axhline(y=0, color='black', linewidth=0.5)
+
+        # ============================================
+        # FUNÇÃO DE ANIMAÇÃO (ATUALIZA AMBOS OS GRÁFICOS)
+        # ============================================
+        def animate(frame):
+            """
+            Atualiza a animação tanto no gráfico 3D quanto no 2D
+            frame: índice do frame atual (0 a 299)
+            """
+            # Tempo atual baseado no frame
+            t_current = t_anim[frame]
+            
+            # Calcula o valor de u no ponto (x=1, t_current)
+            u_current = u(x_const, t_current)
+            
+            # ===== ATUALIZA GRÁFICO 3D =====
+            # Atualiza posição do ponto 3D
+            point_3d.set_data([x_const], [t_current])
+            point_3d.set_3d_properties([u_current])
+            
+            # Atualiza linha vertical no 3D
+            vertical_line.set_data([x_const, x_const], [t_current, t_current])
+            vertical_line.set_3d_properties([0, u_current])
+            
+            # ===== ATUALIZA GRÁFICO 2D =====
+            # Atualiza posição do ponto 2D
+            point_2d.set_data([t_current], [u_current])
+            
+            # Atualiza linha vertical no 2D
+            vertical_line_2d.set_data([t_current, t_current], [0, u_current])
+            
+            # Atualiza textos
+            time_text.set_text(f'tempo = {t_current:.3f} s')
+            value_text.set_text(f'u = {u_current:.5f}')
+            
+            # ===== EFEITOS VISUAIS =====
+            # Muda a cor do ponto baseado na amplitude (ambos os gráficos)
+            intensidade = u_current / u_pico
+            
+            if intensidade > 0.95:
+                cor = 'darkred'
+                size_3d = 10
+                size_2d = 12
+            elif intensidade > 0.7:
+                cor = 'red'
+                size_3d = 9
+                size_2d = 11
+            elif intensidade > 0.3:
+                cor = 'orange'
+                size_3d = 8
+                size_2d = 10
+            else:
+                cor = 'yellow'
+                size_3d = 7
+                size_2d = 9
+            
+            point_3d.set_color(cor)
+            point_3d.set_markersize(size_3d)
+            point_2d.set_color(cor)
+            point_2d.set_markersize(size_2d)
+            
+            return point_3d, vertical_line, point_2d, vertical_line_2d, time_text, value_text
+
+        # ============================================
+        # CRIAÇÃO DA ANIMAÇÃO
+        # ============================================
+        anim = FuncAnimation(fig, animate, frames=len(t_anim), 
+                            interval=30, blit=False, repeat=True)
+
+        # Ajuste do layout principal
+        plt.suptitle('Análise Completa da Onda Gaussiana | Animação Simultânea 3D e 2D', 
+                    fontsize=14, fontweight='bold', y=0.98)
+
+        plt.tight_layout()
+
+        # ============================================
+        # INFORMAÇÕES E EXECUÇÃO
+        # ============================================
+        print("\n" + "="*80)
+        print("🎬 ANIMAÇÃO SIMULTÂNEA: GRÁFICO 3D + GRÁFICO 2D")
+        print("="*80)
+        print(f"Função: u(x,t) = (1/20)·exp(-10·(x-t)²)")
+        print(f"\nConfiguração da animação:")
+        print(f"  • Ponto animado: segue a curva u({x_const}, t)")
+        print(f"  • Intervalo de tempo: t ∈ [{t_min}, {t_max}]")
+        print(f"  • Número de frames: {len(t_anim)}")
+        print(f"  • Velocidade: 30ms/frame (~33 fps)")
+        print(f"\nElementos visuais:")
+        print(f"  🔴 Ponto vermelho: Posição atual em ambos os gráficos")
+        print(f"  📍 Linha pontilhada: Conexão com o eixo (2D) e plano base (3D)")
+        print(f"  🎨 Cor do ponto: Varia com a amplitude (amarelo → vermelho)")
+        print(f"\nComportamento:")
+        print(f"  • Início (t = 0.00): u = {u(x_const, 0):.6f}")
+        print(f"  • Pico   (t = 1.00): u = {u_pico:.6f} ★")
+        print(f"  • Fim    (t = 2.00): u = {u(x_const, 2):.6f}")
+        print("="*80)
+        print("\n▶️ Executando animação...")
+        print("   Observe o ponto vermelho se movendo NOS DOIS GRÁFICOS simultaneamente!")
+        print("   Feche a janela para encerrar.\n")
+
+        # Mostrar a figura com animação
+        plt.show()
+
+        # Opção para salvar a animação (descomente se quiser)
+        # from matplotlib.animation import PillowWriter
+        # anim.save('animacao_3d_e_2d.gif', writer=PillowWriter(fps=33))
+        # print("✓ Animação salva como 'animacao_3d_e_2d.gif'")        
+
+    elif op == 18: #reproducao imagem 2.1 Allen, E. J., Novosel, S. J., & Zhang, Z. (1998)
         dominio = [dominio.Dominio(L=1, L0=0, N=2**(k+2)) for k in range(8)]
         ass = [Assimilacao(dom = dominio[i]) for i in range(8)]
         import matplotlib.pyplot as plt
@@ -751,9 +1026,11 @@ if __name__ == "__main__":
         for i in range(amos):
             ax.plot(np.full_like(dom.x, i+1), dom.x, matriz[:, i], linewidth=2)
 
-        ax.set_xlabel('Amostra')
-        ax.set_ylabel('x')
-        ax.set_zlabel('u')
+        ax.set_xlabel('Amostra x_j')
+        ax.set_ylabel('t')
+        ax.set_zlabel((r'$y_j^{(o)}(t)$'))
+        zlabel = ax.zaxis.label
+        zlabel.set_rotation(0)   
         ax.set_xticks([i for i in range(amos)])
         ax.view_init(25, -60)
         plt.show()
@@ -873,7 +1150,7 @@ if __name__ == "__main__":
         graf = cdg.Grafico2d(dom.x, y, z,
                              y1_name="primeira amostra",
                              y2_name="segunda amostra" ,
-                             title = "As duas soluções")
+                             title = "Duas primeiras amostras para assimilação")
         graf.plot2d()  
 
     elif op == 7: #gráficos de validação do método numérico
@@ -905,9 +1182,14 @@ if __name__ == "__main__":
         z = sol.solucao_numerica()
         print(max(y-z))
 
-    elif op == 0: # grafico das duas soluções 
+    elif op == 0: # apresenta o grafico das duas soluções da equação 
         y = sol.solucao_numerica()
         z = sol.solucao_analitica()
-        graf = cdg.Grafico2d(dom.x, y, z, title = "As duas soluções")
+        graf = cdg.Grafico2d(x = dom.x,
+                             y1 = y,
+                             y1_name = "Solução numérica",
+                             y2 = z,
+                             y2_name = "Solução Analítica",
+                             title = "Solução para advecção")
         graf.plot2d()
     

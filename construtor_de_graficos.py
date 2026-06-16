@@ -89,14 +89,24 @@ class Grafico2d:
 
         
         return self
-    
+
+
+
+
+
+
+
 if __name__ == "__main__":
     import dominio
     import condicoes_iniciais as cond
-    #criando o domínio do paper 
-    dom = dominio.Dominio()
-    u0 =  cond.Funcoes2d()
-    y = u0.condicao_paper(dom.x)
-    y2 = u0.condicao_caixa(dom.x)
-    grafico = Grafico2d(dom.x, y, y2, inicio = dom.x[0], y1_name="funcao 1" , title= "Condição incial do Paper")
-    grafico.plot2d()
+    op =2 
+
+
+    if op ==1:
+        #criando o domínio do paper 
+        dom = dominio.Dominio()
+        u0 =  cond.Funcoes2d()
+        y = u0.condicao_paper(dom.x)
+        y2 = u0.condicao_caixa(dom.x)
+        grafico = Grafico2d(dom.x, y, y2, inicio = dom.x[0], y1_name="funcao 1" , title= "Condição incial do Paper")
+        grafico.plot2d()
