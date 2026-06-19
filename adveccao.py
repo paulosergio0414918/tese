@@ -347,11 +347,14 @@ class Assimilacao(SolucaoAdveccao):
         self._matriz_com_amostras = None
         self._matriz_com_amostras_ruido = None
         self.vetor_custo = []
-        self.vetor_ruido = [random.uniform(0, 0.005) for i in range(self.dom.N)]
-        self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
+        #self.vetor_ruido = [random.uniform(0, 0.005) for i in range(self.dom.N)]
+        self.matriz_ruido = np.array([[random.gauss(0, 0.0005) for _ in range(self.n_amostras)] for _ in range(self.dom.N)])
+        #print(self.matriz_ruido.shape)
+        #self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
+        self.E = np.abs(np.mean(np.sum(self.matriz_ruido, axis=1)))
         self.tj = [((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2)*dom.dt for i in range(self.n_amostras)]
 
-        self.matriz_de_amostras_ruido()
+        #self.matriz_de_amostras_ruido()
 
     def matriz_de_amostras(self):
         #if self._matriz_com_amostras is None:
@@ -373,10 +376,12 @@ class Assimilacao(SolucaoAdveccao):
             self.matriz_de_amostras()     
         matriz_com_ruido = self._matriz_com_amostras.copy()
         
-        for j in range(self.n_amostras):
-            matriz_com_ruido[:,j] += self.vetor_ruido
-        self._matriz_com_amostras_ruido = matriz_com_ruido
-        return matriz_com_ruido
+        #for j in range(self.n_amostras):
+            #matriz_com_ruido[:,j] += self.vetor_ruido
+        #self._matriz_com_amostras_ruido = matriz_com_ruido
+        #return matriz_com_ruido
+        amostras_com_ruido = matriz_com_ruido + self.matriz_ruido
+        return amostras_com_ruido
 
     def Lax_Friedrichs_transpose(self, x):
         """ Solução do problema backward."""
@@ -437,7 +442,7 @@ class Assimilacao(SolucaoAdveccao):
         
         # Soma das diferenças propagadas para trás
         for i, passo in enumerate(self.passos):
-            # Propagação adjunta desde o passo i até o início
+            # Propagação adjunta desde o passo i até oamostra_local início
             dif = d[:, i].copy()
             
             # Aplica operador adjunto para voltar no tempo
@@ -452,13 +457,17 @@ class Assimilacao(SolucaoAdveccao):
         #calculando as diferencas no tempo (x0-T)/c
         if self.ruido:
             grad = np.zeros(self.dom.N)
-            amostra_local = self.sol.u_zero(self.dom.x)
+            amostra_local = self.sol.u_zero(self.dom.x)+ self.matriz_ruido[:,0]
+            #print(amostra_local.shape)
             for i in range(self.n_amostras):
-                grad += -(1/self.c)*(amostra_local + self.vetor_ruido - solucao)
+                
+                #grad += -(1/self.c)*(self.matriz_de_amostras_ruido()[:,i] - solucao)
+                grad += -(1/self.c)*(amostra_local - solucao)
         else:
             grad = np.zeros(self.dom.N)
             amostra_local = self.sol.u_zero(self.dom.x)
-            for _ in range(self.n_amostras):
+            for i in range(self.n_amostras):
+                #grad += -(1/self.c)*(self.matriz_de_amostras()[:,i] - solucao)
                 grad += -(1/self.c)*(amostra_local - solucao) 
 
         return grad
@@ -566,7 +575,8 @@ class Assimilacao(SolucaoAdveccao):
                   iter: int = 10):
         diferenca = []
         for i in range(iter):
-            diferenca += [np.mean(self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i))]
+            diferenca.append(np.abs(np.mean((self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i)))))
+            #diferenca.append(float(np.linalg.norm(self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i))))
 
         return diferenca
     
@@ -593,20 +603,117 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     ###### parâmetros #######
-    op = 19
+    op = 21
     ruido = True
-    iteracoes = 16
+    iteracoes = 32
     amos = 2
 
 
     ###### objetos ##########
     dom = dominio.Dominio()
-    ass = Assimilacao(dom, modo="analitico", n_amostras = amos)
+    ass = Assimilacao(dom, modo="analitico", n_amostras = amos, ruido=ruido)
     sol = SolucaoAdveccao(dom)
     val = Validacao()
     
     ##### lista de testes ##########
-    if op == 19: # Grafico das amostras em 3d
+    if op == 21: #resultado solicitado pelo professor pedro
+        from tqdm import tqdm
+        testes = 50
+        medias_ruidos = []
+        resultado = np.zeros((iteracoes ,testes))
+        for i in tqdm(range(testes)):
+            ass = Assimilacao(dom, modo="numerico", n_amostras = amos, ruido = True)
+            resultado[:,i] = ass.diferenca(iter = iteracoes)
+            medias_ruidos.append(ass.E)
+
+
+        plt.figure(figsize=(10, 6))
+
+        for i in range(testes):
+            plt.scatter(range(iteracoes), resultado[:, i], linewidth=1)
+        
+        plt.scatter([i+1 for i in range(iteracoes)], [np.abs(max(medias_ruidos)) for _ in range(iteracoes)], label="Maior média ", linewidth=1)
+        plt.scatter([i+1 for i in range(iteracoes)], [np.abs(min(medias_ruidos)) for _ in range(iteracoes)], label="Menor média", linewidth=1)    
+        plt.ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
+        #plt.yscale("log")
+        plt.title(f'{testes} testes de assimilação de {amos} amostras e {iteracoes} iterações')
+        plt.legend()
+        
+        plt.show()
+
+    elif op == 20: #Constatação final do resultado teórico para advecção
+            ass1 = Assimilacao(dom, modo="numerico", ruido= True, n_amostras=2)                        
+            k = ass1.E
+            d1 = ass1.diferenca(iter = iteracoes)
+            #print(f'tamanho do vetor d5 {d1}')
+            ass2 = Assimilacao(dom, modo="numerico", ruido= True, n_amostras=4)            
+            m = ass2.E
+            d2 = ass2.diferenca(iter = iteracoes)
+            ass3 = Assimilacao(dom, modo="numerico", ruido= True, n_amostras=6)
+            n = ass3.E
+            d3 = ass3.diferenca(iter = iteracoes)
+            ass4 = Assimilacao(dom, modo="numerico", ruido= True, n_amostras=8)
+            d4 = ass4.diferenca(iter = iteracoes)
+            ass5 = Assimilacao(dom, modo="numerico", n_amostras= 2)
+            d5 = ass5.diferenca(iter = iteracoes)
+            ass6 = Assimilacao(dom, modo="numerico",  n_amostras=4) 
+            d6 = ass6.diferenca(iter = iteracoes)           
+            ass7 = Assimilacao(dom, modo="numérico", n_amostras=6)
+            d7 = ass7.diferenca(iter = iteracoes)
+            ass8 = Assimilacao(dom, modo="numérico", n_amostras=8)
+            d8 = ass8.diferenca(iter = iteracoes)
+
+
+            import matplotlib.pyplot as plt
+            fig, axs = plt.subplots(2, 2)
+            axs[0, 0].set_title(f"Assimilação considerando duas amostras")
+            axs[0, 0].scatter([i+1 for i in range(iteracoes)], d1, label="Com ruido", linewidth=1)
+            axs[0, 0].scatter([i+1 for i in range(iteracoes)], d5, label="Sem ruido", linewidth=1)
+            axs[0, 0].scatter([i+1 for i in range(iteracoes)], [k for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
+            axs[0, 0].legend()
+            axs[0, 0].set_xlabel("n")
+            axs[0, 0].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
+            axs[0, 0].set_yscale("log")
+            axs[0, 0].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
+
+
+            axs[0, 1].set_title(f"Assimilação considerando quatro amostras")
+            axs[0, 1].scatter([i+1 for i in range(iteracoes)], d2, label="Com ruido", linewidth=1)
+            axs[0, 1].scatter([i+1 for i in range(iteracoes)], d6, label="Sem ruido", linewidth=1)            
+            axs[0, 1].scatter([i+1 for i in range(iteracoes)], [m for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
+            axs[0, 1].legend()
+            axs[0, 1].set_xlabel("n")
+            axs[0, 1].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
+            axs[0, 1].set_yscale("log")
+            axs[0, 1].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
+
+            axs[1, 0].set_title(f"Assimilação considerando seis amostras")
+            axs[1, 0].scatter([i+1 for i in range(iteracoes)], d3, label="Com ruido", linewidth=1)
+            axs[1, 0].scatter([i+1 for i in range(iteracoes)], d7, label="Sem ruido", linewidth=1)
+            axs[1, 0].scatter([i+1 for i in range(iteracoes)], [n for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
+            axs[1, 0].legend()
+            axs[1, 0].set_xlabel("n")
+            axs[1, 0].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
+            axs[1, 0].set_yscale("log")
+            axs[1, 0].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
+
+            axs[1, 1].set_title(f"Assimilação considerando oito amostras")
+            axs[1, 1].scatter([i+1 for i in range(iteracoes)], d4, label=" Com ruido", linewidth=1)
+            axs[1, 1].scatter([i+1 for i in range(iteracoes)], d8, label=" Sem ruido", linewidth=1)
+            axs[1, 1].scatter([i+1 for i in range(iteracoes)], [ass4.E for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
+            axs[1, 1].legend()
+            axs[1, 1].set_xlabel("n")
+            axs[1, 1].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
+            axs[1, 1].set_yscale("log")
+            axs[1, 1].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
+            fig.tight_layout()
+
+
+
+            
+            plt.show()
+
+    elif op == 19: # Grafico das amostras em 3d
         import numpy as np
         import matplotlib.pyplot as plt
         from mpl_toolkits.mplot3d import Axes3D
@@ -992,7 +1099,7 @@ if __name__ == "__main__":
 
         plt.show()
 
-    elif op == 14: # apresenta os movimentos brownianos em cada amostra
+    elif op == 14: #apresenta os movimentos brownianos em cada amostra
         matriz = ass.matriz_b()
 
         fig = plt.figure(figsize=(10, 8))
@@ -1035,10 +1142,11 @@ if __name__ == "__main__":
         ax.view_init(25, -60)
         plt.show()
 
-    elif op == 11: # Constatação do resultado teórico para advecção
+    elif op == 11: #Constatação do resultado teórico para advecção
             ass1 = Assimilacao(dom, modo="analitico", ruido= True, n_amostras=2)                        
             k = ass1.E
             d1 = ass1.diferenca(iter = iteracoes)
+            #print(f'tamanho do vetor d5 {d1}')
             ass2 = Assimilacao(dom, modo="analitico", ruido= True, n_amostras=4)            
             m = ass2.E
             d2 = ass2.diferenca(iter = iteracoes)
@@ -1062,44 +1170,48 @@ if __name__ == "__main__":
             axs[0, 0].set_title(f"Método analítico com duas amostras")
             axs[0, 0].scatter([i+1 for i in range(iteracoes)], d1, label="Com ruido", linewidth=1)
             axs[0, 0].scatter([i+1 for i in range(iteracoes)], d5, label="Sem ruido", linewidth=1)
-            axs[0, 0].scatter([i+1 for i in range(iteracoes)], [k for _ in range(iteracoes)], label="|E|", linewidth=1)
+            axs[0, 0].scatter([i+1 for i in range(iteracoes)], [k for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
             axs[0, 0].legend()
             axs[0, 0].set_xlabel("n")
-            axs[0, 0].set_ylabel("|\phi^{(t)}(x) - \phi^{(n)}(x)|")
-            axs[0, 0].set_yscale("log"),
+            axs[0, 0].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
+            axs[0, 0].set_yscale("log")
+            axs[0, 0].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
 
 
             axs[0, 1].set_title(f"Método analítico com quatro amostras")
             axs[0, 1].scatter([i+1 for i in range(iteracoes)], d2, label="Com ruido", linewidth=1)
             axs[0, 1].scatter([i+1 for i in range(iteracoes)], d5, label="Sem ruido", linewidth=1)            
-            axs[0, 1].scatter([i+1 for i in range(iteracoes)], [m for _ in range(iteracoes)], label="|E|", linewidth=1)
+            axs[0, 1].scatter([i+1 for i in range(iteracoes)], [m for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
             axs[0, 1].legend()
             axs[0, 1].set_xlabel("n")
-            axs[0, 1].set_ylabel("|\phi^{(t)}(x) - \phi^{(n)}(x)|")
+            axs[0, 1].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
             axs[0, 1].set_yscale("log")
+            axs[0, 1].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
 
             axs[1, 0].set_title(f"Método numérico com duas amostras")
             axs[1, 0].scatter([i+1 for i in range(iteracoes)], d3, label="Com ruido", linewidth=1)
             axs[1, 0].scatter([i+1 for i in range(iteracoes)], d7, label="Sem ruido", linewidth=1)
-            axs[1, 0].scatter([i+1 for i in range(iteracoes)], [n for _ in range(iteracoes)], label="|E|", linewidth=1)
+            axs[1, 0].scatter([i+1 for i in range(iteracoes)], [n for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
             axs[1, 0].legend()
             axs[1, 0].set_xlabel("n")
-            axs[1, 0].set_ylabel("|\phi^{(t)}(x) - \phi^{(n)}(x)|")
+            axs[1, 0].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
             axs[1, 0].set_yscale("log")
+            axs[1, 0].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
 
             axs[1, 1].set_title(f"Método numérico com quatro amostras")
             axs[1, 1].scatter([i+1 for i in range(iteracoes)], d4, label=" Com ruido", linewidth=1)
             axs[1, 1].scatter([i+1 for i in range(iteracoes)], d8, label=" Sem ruido", linewidth=1)
-            axs[1, 1].scatter([i+1 for i in range(iteracoes)], [ass4.E for _ in range(iteracoes)], label="|E|", linewidth=1)
+            axs[1, 1].scatter([i+1 for i in range(iteracoes)], [ass4.E for _ in range(iteracoes)], label=r"$|\mathbb{E}(\Sigma(\xi))|$", linewidth=1)
             axs[1, 1].legend()
             axs[1, 1].set_xlabel("n")
-            axs[1, 1].set_ylabel("|\phi^{(t)}(x) - \phi^{(n)}(x)|")
+            axs[1, 1].set_ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
             axs[1, 1].set_yscale("log")
+            axs[1, 1].yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'$10^{{{int(np.log10(y))}}}$'))
             fig.tight_layout()
 
 
 
-            #fig.legend()
+            
             plt.show()
 
     elif op == 10: #comparar os dois métodos de assimilação 
@@ -1136,15 +1248,15 @@ if __name__ == "__main__":
 
         print(tab)      
 
-    elif op == 9: # gráfico da condição inicial assimilada
-        for i in range(10):
+    elif op == 9: #gráfico da condição inicial assimilada
+        for i in range(iteracoes):
             plt.clf()
             y = ass.gradiente_descendente(it=i)
             z = ass.u_zero(dom.x)
             graf = cdg.Grafico2d(dom.x, y1=y,y2=z, y1_name="assimilação", y2_name="realidade", title=f"iteração{i}")
             graf.plot2d()
 
-    elif op == 8: # gráfico teste das amostras
+    elif op == 8: #gráfico teste das amostras
         y = ass.matriz_de_amostras_ruido()[:, 0]
         z = ass.matriz_de_amostras_ruido()[:, 1]
         graf = cdg.Grafico2d(dom.x, y, z,
@@ -1156,7 +1268,7 @@ if __name__ == "__main__":
     elif op == 7: #gráficos de validação do método numérico
         val.graficos()
 
-    elif op == 6: # tabela de validação do método numérico
+    elif op == 6: #tabela de validação do método numérico
         val.tabela()
 
     elif op == 5: #teste de assimilação
@@ -1167,12 +1279,12 @@ if __name__ == "__main__":
     elif op == 4: #teste do custo de assimilação
         ass.custo_assimilacao(it = iteracoes, grafico=True)
     
-    elif op == 3: # teste da solução analítica
+    elif op == 3: #teste da solução analítica
         y = sol.solucao_analitica()
         graf = cdg.Grafico2d(dom.x, y, title = "Solução analítica")
         graf.plot2d()        
 
-    elif op == 2: # teste da solução numérica
+    elif op == 2: #teste da solução numérica
         y = sol.solucao_numerica()
         graf = cdg.Grafico2d(dom.x, y, title = "Solução numérica")
         graf.plot2d()

@@ -502,7 +502,7 @@ if __name__ == "__main__":
     dom = Dominio(M=4096, N=1024)
     sol = SolucaoAguasRasas(dom)
     val = Validacao(dom)
-    op = 0
+    op = 2
     it = 256
 
 
