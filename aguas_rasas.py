@@ -74,136 +74,100 @@ class SolucaoAguasRasas:
 
         lam = ((self.dom.T-self.dom.t0)*n)/(2*self.dom.L*m)
         if lam >1 or lam<0:
-            return "Instável"
-        else:
-            return lam
-     
-    def ftcs(self,
-             eta: np.ndarray = None,
-             u: np.ndarray = None):
-        """Avança uma unidade de tempo usando diferenças centradas no 
-         espaço e diferença avançada no tempo. """
-        if eta is None:
-            eta = self.eta_zero()
-        if u is None:
-            u = self.u_zero()
-
-        cfl = self.calculo_cfl()
-        v = np.roll(u,-1)-np.roll(u,1)
-        w = np.roll(eta,-1)-np.roll(eta,1)
-
-    
-        return {
-                'eta_final' : eta - v*cfl*0.5,
-                'u_final': u - w*cfl*0.5
-            }
-
-    def leapfrog(self,
-                eta: np.ndarray = None,
-                u: np.ndarray = None,
-                t: int = None):
-        """Avança uma unidade de tempo usando diferenças centradas no 
-         espaço e diferença centradas no tempo. """
+            print("Instável")
         
-        if eta is None:
-            eta = self.eta_zero()
-        if u is None:
-            u = self.u_zero()
-        if t is None:
-            t = self.dom.M
-        #inicialializando o método que usa dois passos desconectados no tempo
-        matriz_eta = np.zeros((self.dom.N, 2))
-        matriz_u = np.zeros((self.dom.N, 2))
-        #print(f"tamanho da matriz eta{matriz_eta.shape}")
-        #print(f"tamanho da matriz u {matriz_u.shape}")
-        #primeira coluna com as condições inciais
-        matriz_eta[:,0] = eta
-        matriz_u[:,0] = u
-        #segunda coluna com um passo do FTCS
-        solucao_n1 = self.ftcs(matriz_eta[:,0],matriz_u[:,0])
-        matriz_eta[:,1] = solucao_n1['eta_final']
-        matriz_u[:,1] = solucao_n1['u_final']
-        #terceira coluna atualizada com o metodo leapfrog
-        cfl = self.calculo_cfl()
-        #v = np.roll(matriz_u[:,1],-1)-np.roll(matriz_u[:,1],1)
-        #w = np.roll(matriz_eta[:,1],-1)-np.roll(matriz_eta[:,1],1)
-        #matriz_eta[:,2] = matriz_eta[:,0]-cfl*v
-        #matriz_u[:,2] = matriz_u[:,0]-cfl*w
-        for i in range(t):
-            # executando o loop espacial
-            v = np.roll(matriz_u[:,1],-1)-np.roll(matriz_u[:,1],1)
-            w = np.roll(matriz_eta[:,1],-1)-np.roll(matriz_eta[:,1],1)
-            #"inserindo a coluna")
-            matriz_eta = np.column_stack((matriz_eta, matriz_eta[:,0]-cfl*v))
-            matriz_u = np.column_stack((matriz_u,matriz_u[:,0]-cfl*w))
-            #"excluindo a coluna")
-            matriz_eta = np.delete(matriz_eta, 0, axis=1)
-            matriz_u = np.delete(matriz_u, 0, axis=1)
-
-        return {
-                'eta_final' : matriz_eta[:,1],
-                'u_final': matriz_u[:,1]
-            }
-
-    def forcante(self,
-                u: np.ndarray = None,
-                eta: np.ndarray = None
-                ): # forçante do método de volumes finitos
-
-        if eta is None:
-            eta = self.eta_zero()
-             
-        if u is None:
-            u = self.u_zero()
-            
-
-        u1 = np.roll(u, -1) #retrocede um índice no vetor u
-        eta1 = np.roll(eta, -1) #retrocede um índice no vetor eta
-
-        deta_dt = (1/self.dom.dx)*(u-u1)
-        du_dt = (1/self.dom.dx)*(eta-eta1)
-        return {
-                'deta_dt' : deta_dt,
-                'du_dt': du_dt
-            }   
+        return lam
+     
+    def godunov_euler(
+            self,
+            eta: np.ndarray = None,
+            u: np.ndarray = None
+            ) -> np.ndarray:
+        
+        eta_bar = np.zeros(self.dom.N)
+        u_bar = np.zeros(self.dom.N)
+        
+        for j in range(1,self.dom.N-1):
+            eta_bar[j] = eta[j]+(0.5*self.calculo_cfl())*(eta[j+1]-2*eta[j]+eta[j-1]+u[j-1]-u[j+1])
+            u_bar[j] = u[j]+(0.5*self.calculo_cfl())*(u[j+1]-2*u[j]+u[j-1]+eta[j-1]-eta[j+1])
+        
+        #inserindo a condição de fronteira periódica
+        eta_bar[0] = eta[0]+(0.5*self.calculo_cfl())*(eta[1]-2*eta[0]+eta[-1]+u[-1]-u[1])
+        eta_bar[-1] = eta[-1]+(0.5*self.calculo_cfl())*(eta[0]-2*eta[-1]+eta[-2]+u[-2]-u[0])
+        u_bar[0] = u[0]+(0.5*self.calculo_cfl())*(u[1]-2*u[0]+u[-1]+eta[-1]-eta[1])
+        u_bar[-1] = u[-1]+(0.5*self.calculo_cfl())*(u[0]-2*u[-1]+u[-2]+eta[-2]-eta[0])
+        
+        return{
+            'eta_final': eta_bar,
+            'u_final': u_bar
+        }
     
-    def ssprk22(self,
+    def muscl_ssprk22(self,
                 cond_eta: np.ndarray = None,
                 cond_u: np.ndarray = None,
                 t: int = None):
-        """Avança uma unidade de tempo usando Runge-Kutta 22 """
-        #################
-        ####corrigir o valores padrões
-        #################
+        """Avança uma unidade de tempo usando SSPRK22 """
+        #construindo as inclinações delta_j
 
-        propagacao = self.forcante(self.eta_zero(self.dom.x_centro), self.u_zero(self.dom.x_borda))
-        if cond_eta is None:
-            cond_eta = propagacao['deta_dt']
-        if cond_u is None:
-            cond_u = propagacao['du_dt']
-        if t is None:
-            t = self.dom.M
-        for i in range(t):
+        def delta(q):
+            N = len(q)
+            d = np.zeros(N)
+            # diferenças com periodicidade
+            dl = q - np.roll(q, 1)          # q[j] - q[j-1]
+            dr = np.roll(q, -1) - q         # q[j+1] - q[j]
+            mask = (dl * dr) > 0
+            d[mask] = np.where(np.abs(dl) < np.abs(dr), dl, dr)[mask]
+            return d
 
-            #primeiro estágio
-            propagacao_1 = self.forcante(cond_eta, cond_u)
-            eta_1 = cond_eta + self.dom.dt*propagacao_1["deta_dt"]
-            u_1 = cond_u + self.dom.dt*propagacao_1["du_dt"]
+        #fluxo a direita e a esqueda em cada célula
+        def compute_fluxes(eta, u):
+            N = len(eta)
+            deta = delta(eta)
+            du = delta(u)
+            
+            F_eta = np.zeros(N)
+            F_u   = np.zeros(N)
+            
+            for j in range(N):
+                jp1 = (j + 1) % N   # periodicidade
+                
+                # Reconstrução MUSCL na interface j (entre j e j+1)
+                eta_L = eta[j] + 0.5 * deta[j]
+                u_L   = u[j]   + 0.5 * du[j]
+                eta_R = eta[jp1] - 0.5 * deta[jp1]
+                u_R   = u[jp1] - 0.5 * du[jp1]
+                
+                # Fluxo de Godunov para o sistema linearizado (|A|=I)
+                F_eta[j] = 0.5 * (u_L + u_R - (eta_R - eta_L))
+                F_u[j]   = 0.5 * (eta_L + eta_R - (u_R - u_L))
+            
+            return F_eta, F_u
+        
+        def muscl(q_eta, q_u):
+            F_eta, F_u = compute_fluxes(q_eta, q_u)
+            dx = self.dom.dx
+            # dq/dt = - (F_j - F_{j-1}) / dx
+            new_q_eta = -(F_eta - np.roll(F_eta, 1)) / dx
+            new_q_u   = -(F_u   - np.roll(F_u, 1))   / dx
+    
+            return {
+                'new_q_eta' : new_q_eta  ,
+                'new_q_u' : new_q_u
+            } 
 
-            #segundo estágio
-            propagacao_2 = self.forcante(eta_1, u_1)
-            eta_2 = 0.5*cond_eta + 0.5*eta_1 + self.dom.dt*propagacao_2["deta_dt"]
-            u_2 = 0.5*cond_u + 0.5*u_1 + self.dom.dt*propagacao_2["du_dt"]        
 
-            # atualização para reiniciar o loop temporal
-            cond_eta = eta_2
-            cond_u = u_2
-
-
+        #primeiro estágio ssprk
+        eta_1 = cond_eta + self.dom.dt * muscl(cond_eta, cond_u)['new_q_eta']
+        u_1 = cond_u + self.dom.dt * muscl(cond_eta,cond_u)['new_q_u']
+        
+        #segundo estágio ssprk
+        eta_2 = 0.5*cond_eta + 0.5*eta_1 + 0.5*self.dom.dt*muscl(eta_1, u_1)['new_q_eta']
+        u_2 = 0.5*cond_u + 0.5*u_1 + 0.5*self.dom.dt*muscl(eta_1, u_1)['new_q_u']      
+        
         return {
                 'eta_final' : eta_2,
                 'u_final': u_2
-            } 
+            }     
     
     def ssprk33(self,
             cond_eta: np.ndarray = None,
@@ -252,7 +216,7 @@ class SolucaoAguasRasas:
                          solucao_eta:  np.ndarray = None, # condição incial para eta
                          solucao_u: np.ndarray = None, #condição inicial para u
                          tempo: int = None, # tempo de execução do método
-                         modo: str = "leapfrog" # modelo de execução
+                         modo: str = "godunov_euler" # modelo de execução
                          ):
         """Calcula a solução de águas rasas após vários instantes."""
 
@@ -264,25 +228,25 @@ class SolucaoAguasRasas:
     
         if solucao_u is None:
             solucao_u = self.u_zero()
+          
+        if modo == "godunov_euler":
             
-        if modo == "ftcs":
-            propagacao = self.ftcs(eta = solucao_eta, u= solucao_u)
-            for _ in range(tempo):
+            propagacao = self.godunov_euler(eta = solucao_eta, u= solucao_u)
+            
+            for _ in range(tempo+1):
+                
                 eta_final = propagacao['eta_final']
                 u_final = propagacao['u_final']
-                propagacao = self.ftcs(eta = eta_final, u= u_final)
-
-        elif modo == "leapfrog":
+                propagacao = self.godunov_euler(eta = eta_final, u= u_final)
+       
+        elif modo == "muscl_ssprk22":
+        
+            propagacao = self.muscl_ssprk22(solucao_eta,solucao_u)
             
-            propagacao = self.leapfrog(solucao_eta,solucao_u, t = tempo)
-            eta_final = propagacao['eta_final']
-            u_final = propagacao['u_final']
-        
-        elif modo == "ssprk22":
-        
-            propagacao = self.ssprk22(solucao_eta,solucao_u, t = tempo)
-            eta_final = propagacao['eta_final']
-            u_final = propagacao['u_final']            
+            for _ in range(tempo+1):
+                eta_final = propagacao['eta_final']
+                u_final = propagacao['u_final']            
+                propagacao = self.muscl_ssprk22(eta_final,u_final)
 
         elif modo == "ssprk33":
         
@@ -292,8 +256,7 @@ class SolucaoAguasRasas:
         
         else:
             print("Modo não definido")
-
-        
+       
         return {
                 'eta' : eta_final,
                 'u'   : u_final 
@@ -305,18 +268,20 @@ class Validacao(SolucaoAguasRasas):
   
     def __init__(self,
                 dom: Dominio,
-                testes: int = 6
+                testes: int = 6,
+                modo: str = "godunov_euler"
                 ):
         self.testes = testes
         self.delta_E = 0
         self.energia_total = 0
         self.dom = dom
+        self.modo = modo
     
     def valores_cfl(self):
         from rich.table import Table
         from rich import print
         passo = 1024
-        tab = Table(title = " Número de Courant e Energia do Sistema.")
+        tab = Table(title = " Número de Courant.")
         tab.add_column(f" ", justify = "center")
         tab.add_column(f"N = {int(passo/(2**2))}", justify = "center")
         tab.add_column(f"N = {int(passo/(2**1))}", justify = "center")
@@ -334,6 +299,35 @@ class Validacao(SolucaoAguasRasas):
                         )
         print(tab)
     
+    def ordem_de_convergencia(self):
+            """ Apresenta uma tabela com os erros de aproximação """
+            import math
+            from tqdm import tqdm
+            from rich import print
+            from rich.table import Table
+            vetor_erro = []
+            tab = Table(title = r"Ordem de convergência para $\eta$ para modelo {}.".format(self.modo))
+            tab.add_column("N", justify = "center")
+            tab.add_column("M", justify = "center")
+            tab.add_column("Courant", justify = "center")
+            tab.add_column("Erro", justify = "center")
+            tab.add_column("Ordem", justify = "center", style = "red")
+
+            for j in tqdm(range(self.testes)):
+                if self.modo == "godunov_euler":
+                    domi = dominio.Dominio(N = 4**(j+2),  M = 4**(j+1))
+                    s = SolucaoAguasRasas(domi)
+                elif self.modo == "muscl_ssprk22":
+                    domi = dominio.Dominio(N = 4**(j+2),  M = 2*4**(j+1))
+                    s = SolucaoAguasRasas(domi)
+                vetor_erro += [max(np.abs(s.solucao_analitica_eta()-s.solucao_numerica(modo =self.modo)['eta']))]
+                if j == 0:
+                    tab.add_row(f"{domi.N}", f"{domi.M}", f"{s.calculo_cfl()}", f"{vetor_erro[j]:.4e}", None )
+                else:
+                    tab.add_row(f"{domi.N}", f"{domi.M}", f"{s.calculo_cfl()}", f"{vetor_erro[j]:.4e}", f"{math.log(abs(vetor_erro[j-1]/vetor_erro[j]))/math.log(4):.4e}" )
+    
+            print(tab)
+
     def calculo_energia(self,
                         solucao_eta: np.ndarray = None,
                         solucao_u:np.ndarray = None,
@@ -489,7 +483,28 @@ class Assimilacao(SolucaoAguasRasas):
         self._matriz_com_amostras_ruido = matriz_com_ruido
         return matriz_com_ruido    
 
+    def forcante(self,
+                u: np.ndarray = None,
+                eta: np.ndarray = None
+                ): # forçante do método de volumes finitos
 
+        if eta is None:
+            eta = self.eta_zero()
+             
+        if u is None:
+            u = self.u_zero()
+            
+
+        u1 = np.roll(u, -1) #retrocede um índice no vetor u
+        eta1 = np.roll(eta, -1) #retrocede um índice no vetor eta
+
+        deta_dt = (1/self.dom.dx)*(u-u1)
+        du_dt = (1/self.dom.dx)*(eta-eta1)
+        return {
+                'deta_dt' : deta_dt,
+                'du_dt': du_dt
+            }   
+    
 
 
 
@@ -499,14 +514,26 @@ if __name__ == "__main__":
     import construtor_de_graficos as cdg
     import numpy as np
 
-    dom = Dominio(M=4096, N=1024)
+    #discretizacao = "godunov_euler"
+    discretizacao = "muscl_ssprk22"
+    #dom = Dominio(N=1024, M=256) #cfl = 1
+    dom = Dominio(N=1024, M=512) #cfl = 0.5
     sol = SolucaoAguasRasas(dom)
-    val = Validacao(dom)
-    op = 2
-    it = 256
+    cfl = sol.calculo_cfl()
+    val = Validacao(dom, modo = discretizacao)
+    
+    
+    op = 6
+    it = 128
 
 
-    if op == 4: # teste da evolução da energia do sistema
+    if op == 6: # teste da ordem de convergênia da solução numérica
+        val.ordem_de_convergencia()
+
+    elif op == 5: # construção de valores de cfl para teste
+        val.valores_cfl()
+
+    elif op == 4: # teste da evolução da energia do sistema
         val.evolucao_da_energia(modo = "leapfrog")
 
     elif op == 3:#teste do calculo da energia do sistema
@@ -516,34 +543,31 @@ if __name__ == "__main__":
     elif op == 2: # teste da solução numerica para η
         for i in range(it):
 
-            solucao = sol.solucao_numerica(modo= "ssprk22", tempo = i+1)
-            solucao2 = sol.solucao_numerica(modo= "ssprk33" ,tempo = i+1)
+            solucao = sol.solucao_numerica(modo = discretizacao, tempo = i)
             z = sol.solucao_analitica_eta(tempo = i)
             y = solucao['eta']
             e_22 = np.linalg.norm(z-y)
-            y2 = solucao2['eta']
-            e_33 = np.linalg.norm(z-y2)
-            
-            if (e_22 or e_33) > 1:
-                print(f"erro leap frog { e_22}")
-                print(f"erro leap ftcs { e_33}")
+                        
+            if e_22 > 1:
+                print(f"considerando {discretizacao} o erro { e_22}")
                 print("erro muito grande.")
                 break
             plt.clf()
             plt.xlim(-dom.L, dom.L) # x limit
-            plt.plot(dom.x, y, label = 'Solução numérica ssprk22' )
-            plt.plot(dom.x, y2, label = 'Solução numérica ssprk33' )
+            plt.plot(dom.x, y, label = 'Solução numérica ' )
             plt.plot(dom.x, z, label = 'Solução Analítica')
-            plt.title(f'Execução {i+1} de {it}.')
+            plt.title(f'Execução {i+1} de {it} do modelo {discretizacao} com cfl = {cfl}.')
             plt.legend()
 
             #plt.show(block = False)
-            plt.pause(0.01)
+            plt.pause(0.001)
 
         plt.show()               
 
     elif op == 1: # teste da cfl
-        print(sol.calculo_cfl())
+        print(f'dt = {dom.dt}')
+        print(f'dx = {dom.dx}')
+        print(f'cfl = {sol.calculo_cfl()}')
 
     elif op == 0: # teste da solução analítica para η
         y = sol.solucao_analitica_eta()

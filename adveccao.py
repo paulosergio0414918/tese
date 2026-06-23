@@ -603,7 +603,7 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     ###### parâmetros #######
-    op = 21
+    op = 6
     ruido = True
     iteracoes = 32
     amos = 2
