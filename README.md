@@ -28,22 +28,22 @@ Em todos os arquivos citados existem exemplos de execução em if __name__ == "_
 
 
 ## CODE ISSUES ADVECÇÃO
-- [x] Conseguir apresentar gráficos de forma eficiente
+- [x] Discretizar a equação por diferenças finitas usando Lax/Friedrichs
 - [x] Calcular as condições iniciais
 - [x] Coletar os dados através das condições inicias
 - [x] Obter a assimilação de dados de forma numérica como dado em 2.
 - [x] Obter a assimilação de dados de forma analítica como proposto em minha tese
 
 ## CODE ISSUES ÁGUAS RASAS LINEARIZADA
-- [x] Conseguir apresentar gráficos de forma eficiente
+- [x] Discretizar a equação via volumes finitos usando Godunov/Euler e muscl/ssprk22
 - [x] Calcular as condições iniciais
 - [] Coletar os dados através das condições inicias
 - [] Obter a assimilação de dados de forma numérica como dado em 2.
 - [] Obter a assimilação de dados de forma analítica como proposto em minha tese
 
-## CODE ISSUES ÁGUAS RASAS PLANO F
-- [] Conseguir apresentar gráficos de forma eficiente
-- [] Calcular as condições iniciais
+## CODE ISSUES ÁGUAS RASAS NÃO LINEARIZADAS
+- [x] Discretizar a equação via volumes finitos usando Rusanov/Euler
+- [x] Calcular as condições iniciais
 - [] Coletar os dados através das condições inicias
 - [] Obter a assimilação de dados de forma numérica como dado em 2.
 - [] Obter a assimilação de dados de forma analítica como proposto em minha tese

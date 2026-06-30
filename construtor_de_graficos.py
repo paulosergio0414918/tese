@@ -53,7 +53,7 @@ class Grafico2d:
                  x: tuple, 
                  y1: tuple,
                  y2: tuple = None,
-                 inicio: float = 4, 
+                 inicio: float = None, 
                  title: str = " Grafico da função",
                  y1_name: str = "Grafico 1",
                  y2_name: str = "Grafico 2"
@@ -66,7 +66,10 @@ class Grafico2d:
        self.inicio = inicio
        self.y1_name = y1_name
        self.y2_name = y2_name
-       plt.xlim(-self.inicio, self.inicio) #limites do eixo x
+       if self.inicio == None:
+           plt.xlim(self.x[0], self.x[-1])
+       else:
+           plt.xlim(-self.inicio, self.inicio) #limites do eixo x
        plt.title(self.title) # título do Gráfico
         
        

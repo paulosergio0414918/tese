@@ -332,9 +332,11 @@ class Assimilacao(SolucaoAdveccao):
                  dom: Dominio, # um domínio criado pela classe Dominio
                  c: float = 1, #velocidade de advecção
                  n_amostras: int = 2,
+                 standard_deviation: float = 0.0005,
                  condicao: str = "condicao_paper",
                  ruido: bool = False,
                  modo: str = "numerico"
+                 
                  ):  
         self.n_amostras = n_amostras
         self.dom = dom
@@ -344,11 +346,12 @@ class Assimilacao(SolucaoAdveccao):
         self.ruido = ruido
         self.sol = SolucaoAdveccao(self.dom)
         self.modo = modo
+        self.standard_deviation = standard_deviation
         self._matriz_com_amostras = None
         self._matriz_com_amostras_ruido = None
         self.vetor_custo = []
         #self.vetor_ruido = [random.uniform(0, 0.005) for i in range(self.dom.N)]
-        self.matriz_ruido = np.array([[random.gauss(0, 0.0005) for _ in range(self.n_amostras)] for _ in range(self.dom.N)])
+        self.matriz_ruido = np.array([[random.gauss(0, self.standard_deviation) for _ in range(self.n_amostras)] for _ in range(self.dom.N)])
         #print(self.matriz_ruido.shape)
         #self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
         self.E = np.abs(np.mean(np.sum(self.matriz_ruido, axis=1)))
@@ -598,12 +601,14 @@ class Assimilacao(SolucaoAdveccao):
 
 
 if __name__ == "__main__":
+    from tqdm import tqdm
     import dominio
     import construtor_de_graficos as cdg
     import matplotlib.pyplot as plt
-
+    from rich import print
+    from rich.table import Table
     ###### parâmetros #######
-    op = 6
+    op = 22
     ruido = True
     iteracoes = 32
     amos = 2
@@ -616,7 +621,27 @@ if __name__ == "__main__":
     val = Validacao()
     
     ##### lista de testes ##########
-    if op == 21: #resultado solicitado pelo professor pedro
+    if op == 22: #tabela do resultado do professor
+        sd_increments = 5
+        samples = 5 #não alterar estevalor
+        tab = Table(title = f"Diferença após {iteracoes} iterações.")
+        tab.add_column("Desvio padrão", justify = "center")
+        tab.add_column("2 amostras", justify = "center")
+        tab.add_column("3 amostras", justify = "center")
+        tab.add_column("4 amostras", justify = "center")
+        tab.add_column("5 amostras", justify = "center")
+        tab.add_column("6 amostras", justify = "center")
+        for i in tqdm(range(sd_increments)):
+            results = []
+            sd = 10**(-3)*i*5
+            for j in range(samples):
+                ass_local = Assimilacao(dom, modo="numerico", n_amostras = j+2, ruido=ruido, standard_deviation = sd)
+                results.append(ass_local.diferenca(iter = iteracoes)[-1])
+
+            tab.add_row(f"{sd}", f"{results[0]:.4e}", f"{results[1]:.4e}", f"{results[2]:.4e}", f"{results[3]:.4e}", f"{results[4]:.4e}")
+        print(tab)
+        
+    elif op == 21: #resultado solicitado pelo professor pedro
         from tqdm import tqdm
         testes = 50
         medias_ruidos = []

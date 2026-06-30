@@ -24,15 +24,17 @@ class Dominio:
     self.t0 = t0   #Tempo inicial (segundos)
     self.T = T     #Tempo final (segundos)
     self.L = L     #Metade do tamanho do intervalo espacial simétrico (metros)
-    self.L0 = -self.L if L0 is None else L0   #Início do intervalo espacial não simétrico
+    self.L0 = L0   #Início do intervalo espacial não simétrico
     self.N = N     #Número de passos no espaço
     self.M = M     #Número de passos no tempo
-    self.validacao_cfl()
+    
 
     #Garantindo a simetria do intervalo
     if L0 is None:
       self.L0 = -self.L
 
+    self.validacao_cfl()
+    
     #Discretização no tempo
     if self.M == None:
       self.M = (T-t0)/dt

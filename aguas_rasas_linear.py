@@ -1,3 +1,4 @@
+#aguas rasas linear
 import numpy as np
 from rich.traceback import install
 from tqdm import tqdm
@@ -63,20 +64,13 @@ class SolucaoAguasRasas:
         return 0.5*(self.eta_zero(self.dom.x - (tempo+1)*self.dom.dt) \
             - self.eta_zero(self.dom.x + (tempo+1)*self.dom.dt))
     
-    def calculo_cfl(self,
-                    n: int = None,
-                    m: int = None):
-        if n is None:
-            n = self.dom.N
-        
-        if m is None:
-            m = self.dom.M
+    def calculo_cfl(self):
 
-        lam = ((self.dom.T-self.dom.t0)*n)/(2*self.dom.L*m)
-        if lam >1 or lam<0:
-            print("Instável")
+        cfl = self.dom.dt / self.dom.dx
+        if cfl >1 or cfl<0:
+            print(f"Instável, cfl = {cfl}.")
         
-        return lam
+        return cfl
      
     def godunov_euler(
             self,
@@ -102,23 +96,52 @@ class SolucaoAguasRasas:
             'u_final': u_bar
         }
     
-    def muscl_ssprk22(self,
+    def muscl_ssprk(self,
                 cond_eta: np.ndarray = None,
                 cond_u: np.ndarray = None,
+                modo: str = "muscl_ssprk33", # modelo de execução
+
                 t: int = None):
         """Avança uma unidade de tempo usando SSPRK22 """
         #construindo as inclinações delta_j
 
-        def delta(q):
+        def delta_minmod(q):# van_leer
             N = len(q)
             d = np.zeros(N)
             # diferenças com periodicidade
             dl = q - np.roll(q, 1)          # q[j] - q[j-1]
             dr = np.roll(q, -1) - q         # q[j+1] - q[j]
-            mask = (dl * dr) > 0
-            d[mask] = np.where(np.abs(dl) < np.abs(dr), dl, dr)[mask]
+            mask = (dl * dr) > 0 #retorna um vetor booleano
+            d[mask] = np.where(np.abs(dl) < np.abs(dr), dl, dr)[mask] # seleciona o menor elemento dos vetores dr e dl
             return d
 
+        def delta_van_leer(q):# van_leer
+            N = len(q)
+            d = np.zeros(N)
+            # diferenças com periodicidade
+            dl = q - np.roll(q, 1)          # q[j] - q[j-1]
+            dr = np.roll(q, -1) - q         # q[j+1] - q[j]
+            for i in range (N):
+                if dl[i]*dr[i] > 0:
+
+                    d[i] = (2*dl[i]*dr[i])/(dl[i]+dr[i])
+            
+            return d
+        
+        def delta(q):# superbee
+            N = len(q)
+            d = np.zeros(N)
+            # diferenças com periodicidade
+            dl = q - np.roll(q, 1)          # q[j] - q[j-1]
+            dr = np.roll(q, -1) - q         # q[j+1] - q[j]
+            for i in range (N):
+                if dl[i]*dr[i] > 0:
+                    r = dr[i]/dl[i]
+                    phi_r = max(0, min(1,2*r), min(2,r))
+                    d[i] = phi_r * dl[i]
+            
+            return d
+        
         #fluxo a direita e a esqueda em cada célula
         def compute_fluxes(eta, u):
             N = len(eta)
@@ -155,68 +178,44 @@ class SolucaoAguasRasas:
                 'new_q_u' : new_q_u
             } 
 
-
-        #primeiro estágio ssprk
-        eta_1 = cond_eta + self.dom.dt * muscl(cond_eta, cond_u)['new_q_eta']
-        u_1 = cond_u + self.dom.dt * muscl(cond_eta,cond_u)['new_q_u']
-        
-        #segundo estágio ssprk
-        eta_2 = 0.5*cond_eta + 0.5*eta_1 + 0.5*self.dom.dt*muscl(eta_1, u_1)['new_q_eta']
-        u_2 = 0.5*cond_u + 0.5*u_1 + 0.5*self.dom.dt*muscl(eta_1, u_1)['new_q_u']      
-        
-        return {
-                'eta_final' : eta_2,
-                'u_final': u_2
-            }     
-    
-    def ssprk33(self,
-            cond_eta: np.ndarray = None,
-            cond_u: np.ndarray = None,
-            t: int = None):
-        """Avança uma unidade de tempo usando Runge-Kutta 33 """
-      
-        propagacao = self.forcante(self.eta_zero(), self.u_zero())
-        if cond_eta is None:
-            cond_eta = propagacao['deta_dt']
-        if cond_u is None:
-            cond_u = propagacao['du_dt']
-        if t is None:
-            t = self.dom.M
-        for i in range(t):
-
-            #primeiro estágio
-            propagacao_1 = self.forcante(cond_eta, cond_u)
-            eta_1 = cond_eta + self.dom.dt*propagacao_1["deta_dt"]
-            u_1 = cond_u + self.dom.dt*propagacao_1["du_dt"]
-      
+        if modo == "muscl_ssprk22":
+            #primeiro estágio ssprk22
+            eta_1 = cond_eta + self.dom.dt * muscl(cond_eta, cond_u)['new_q_eta']
+            u_1 = cond_u + self.dom.dt * muscl(cond_eta,cond_u)['new_q_u']
             
-            #segundo estágio
-            propagacao_2 = self.forcante(eta_1, u_1)
-            eta_2 = 0.75*cond_eta + 0.25*eta_1 + 0.25*self.dom.dt*propagacao_2["deta_dt"]
-            u_2 = 0.75*cond_u + 0.25*u_1 + 0.25*self.dom.dt*propagacao_2["du_dt"]        
-    
+            #segundo estágio ssprk22
+            eta_2 = 0.5*cond_eta + 0.5*eta_1 + 0.5*self.dom.dt*muscl(eta_1, u_1)['new_q_eta']
+            u_2 = 0.5*cond_u + 0.5*u_1 + 0.5*self.dom.dt*muscl(eta_1, u_1)['new_q_u']      
             
-            #terceiro estágio
-            propagacao_3 = self.forcante(eta_2, u_2)
-            eta_3 = (1/3)*cond_eta + (2/3)*eta_2 + (2/3)*self.dom.dt*propagacao_3["deta_dt"]
-            u_3 = (1/3)*cond_u + (2/3)*u_2 + (2/3)*self.dom.dt*propagacao_3["du_dt"]        
-   
+            return {
+                    'eta_final' : eta_2,
+                    'u_final': u_2
+                }  
+           
+        elif modo == "muscl_ssprk33":
+            #primeiro estágio ssprk33
+            eta_1 = cond_eta + self.dom.dt * muscl(cond_eta, cond_u)['new_q_eta']
+            u_1 = cond_u + self.dom.dt * muscl(cond_eta,cond_u)['new_q_u']
             
-            # atualização para reiniciar o loop temporal
-            cond_eta = eta_3
-            cond_u = u_3
+            #segundo estágio ssprk33
+            eta_2 = 0.75*cond_eta + 0.25*eta_1 + 0.25*self.dom.dt*muscl(eta_1, u_1)['new_q_eta']
+            u_2 = 0.75*cond_u + 0.25*u_1 + 0.25*self.dom.dt*muscl(eta_1, u_1)['new_q_u']      
+            
+            #terceiro estágio ssprk33
+            eta_3 = (1/3)*cond_eta + (2/3)*eta_2 + (2/3)*self.dom.dt*muscl(eta_2, u_2)['new_q_eta']
+            u_3 = (1/3)*cond_u + (2/3)*u_2 + (2/3)*self.dom.dt*muscl(eta_2, u_2)['new_q_u']      
+            
 
-
-        return {
-            'eta_final' : eta_3,
-            'u_final': u_3
-        } 
+            return {
+                    'eta_final' : eta_3,
+                    'u_final': u_3
+                } 
 
     def solucao_numerica(self,
                          solucao_eta:  np.ndarray = None, # condição incial para eta
                          solucao_u: np.ndarray = None, #condição inicial para u
                          tempo: int = None, # tempo de execução do método
-                         modo: str = "godunov_euler" # modelo de execução
+                         modo: str = "muscl_ssprk33" # modelo de execução
                          ):
         """Calcula a solução de águas rasas após vários instantes."""
 
@@ -241,19 +240,22 @@ class SolucaoAguasRasas:
        
         elif modo == "muscl_ssprk22":
         
-            propagacao = self.muscl_ssprk22(solucao_eta,solucao_u)
+            propagacao = self.muscl_ssprk(solucao_eta,solucao_u, modo = "muscl_ssprk22")
             
             for _ in range(tempo+1):
                 eta_final = propagacao['eta_final']
                 u_final = propagacao['u_final']            
-                propagacao = self.muscl_ssprk22(eta_final,u_final)
+                propagacao = self.muscl_ssprk(eta_final,u_final, modo = "muscl_ssprk22")
 
-        elif modo == "ssprk33":
+        elif modo == "muscl_ssprk33":
         
-            propagacao = self.ssprk33(solucao_eta,solucao_u, t = tempo)
-            eta_final = propagacao['eta_final']
-            u_final = propagacao['u_final'] 
-        
+            propagacao = self.muscl_ssprk(solucao_eta,solucao_u, modo = "muscl_ssprk33")
+            
+            for _ in range(tempo+1):
+                eta_final = propagacao['eta_final']
+                u_final = propagacao['u_final'] 
+                propagacao = self.muscl_ssprk(eta_final,u_final, modo = "muscl_ssprk33")
+
         else:
             print("Modo não definido")
        
@@ -262,14 +264,13 @@ class SolucaoAguasRasas:
                 'u'   : u_final 
             }
 
-
 class Validacao(SolucaoAguasRasas):
     """validação do método numérico"""
   
     def __init__(self,
                 dom: Dominio,
                 testes: int = 6,
-                modo: str = "godunov_euler"
+                modo: str = "muscl_ssprk33"
                 ):
         self.testes = testes
         self.delta_E = 0
@@ -306,25 +307,26 @@ class Validacao(SolucaoAguasRasas):
             from rich import print
             from rich.table import Table
             vetor_erro = []
-            tab = Table(title = r"Ordem de convergência para $\eta$ para modelo {}.".format(self.modo))
+            tab = Table(title = f"Ordem de convergência para eta para modelo {self.modo}.")
+            tab.add_column("i", justify = "center")
             tab.add_column("N", justify = "center")
             tab.add_column("M", justify = "center")
             tab.add_column("Courant", justify = "center")
             tab.add_column("Erro", justify = "center")
             tab.add_column("Ordem", justify = "center", style = "red")
-
+            N_ref = self.dom.N
+            M_ref = self.dom.M
             for j in tqdm(range(self.testes)):
-                if self.modo == "godunov_euler":
-                    domi = dominio.Dominio(N = 4**(j+2),  M = 4**(j+1))
-                    s = SolucaoAguasRasas(domi)
-                elif self.modo == "muscl_ssprk22":
-                    domi = dominio.Dominio(N = 4**(j+2),  M = 2*4**(j+1))
-                    s = SolucaoAguasRasas(domi)
-                vetor_erro += [max(np.abs(s.solucao_analitica_eta()-s.solucao_numerica(modo =self.modo)['eta']))]
+                
+                domi = dominio.Dominio(N = int(N_ref*4**(j-3)),  M = int(M_ref*4**(j-3)))
+                s = SolucaoAguasRasas(domi)
+                vetor_erro += [max(np.abs(s.solucao_analitica_eta()-s.solucao_numerica(modo =self.modo)['eta']))] # erro na norma infinito
+                #vetor_erro += [np.mean(np.abs(s.solucao_analitica_eta()-s.solucao_numerica(modo =self.modo)['eta']))] # erro na norma 1
+
                 if j == 0:
-                    tab.add_row(f"{domi.N}", f"{domi.M}", f"{s.calculo_cfl()}", f"{vetor_erro[j]:.4e}", None )
+                    tab.add_row(f"{j+1}",f"{domi.N}", f"{domi.M}", f"{s.calculo_cfl()}", f"{vetor_erro[j]:.4e}", None )
                 else:
-                    tab.add_row(f"{domi.N}", f"{domi.M}", f"{s.calculo_cfl()}", f"{vetor_erro[j]:.4e}", f"{math.log(abs(vetor_erro[j-1]/vetor_erro[j]))/math.log(4):.4e}" )
+                    tab.add_row(f"{j+1}",f"{domi.N}", f"{domi.M}", f"{s.calculo_cfl()}", f"{vetor_erro[j]:.4e}", f"{math.log(abs(vetor_erro[j-1]/vetor_erro[j]))/math.log(4):.4e}" )
     
             print(tab)
 
@@ -430,7 +432,6 @@ class Validacao(SolucaoAguasRasas):
         plt.yscale('log')
         plt.show()
      
-
 class Assimilacao(SolucaoAguasRasas):
 
     def __init__(self,
@@ -506,8 +507,6 @@ class Assimilacao(SolucaoAguasRasas):
             }   
     
 
-
-
 if __name__ == "__main__":
     import dominio
     import matplotlib.pyplot as plt
@@ -515,12 +514,13 @@ if __name__ == "__main__":
     import numpy as np
 
     #discretizacao = "godunov_euler"
-    discretizacao = "muscl_ssprk22"
-    #dom = Dominio(N=1024, M=256) #cfl = 1
-    dom = Dominio(N=1024, M=512) #cfl = 0.5
+    discretizacao = "muscl_ssprk33"
+    #dom = Dominio(N=1024, M = 512) #cfl = 0.5
+    #dom = Dominio(N=1024, M = 320) #cfl = 0.8
+    dom = Dominio(N=1024, M=256) #cfl = 1
     sol = SolucaoAguasRasas(dom)
     cfl = sol.calculo_cfl()
-    val = Validacao(dom, modo = discretizacao)
+    val = Validacao(dom, modo = discretizacao, testes = 5)
     
     
     op = 6
@@ -553,7 +553,7 @@ if __name__ == "__main__":
                 print("erro muito grande.")
                 break
             plt.clf()
-            plt.xlim(-dom.L, dom.L) # x limit
+            plt.xlim(dom.L0, dom.L) # x limit
             plt.plot(dom.x, y, label = 'Solução numérica ' )
             plt.plot(dom.x, z, label = 'Solução Analítica')
             plt.title(f'Execução {i+1} de {it} do modelo {discretizacao} com cfl = {cfl}.')
@@ -575,3 +575,48 @@ if __name__ == "__main__":
         graf = cdg.Grafico2d(dom.x,y)
         graf.plot2d()
 
+    elif op == -1: #lixo 
+        """
+        def ssprk33(self,
+        cond_eta: np.ndarray = None,
+        cond_u: np.ndarray = None,
+        t: int = None):
+        Avança uma unidade de tempo usando Runge-Kutta 33 
+      
+        propagacao = self.forcante(self.eta_zero(), self.u_zero())
+        if cond_eta is None:
+            cond_eta = propagacao['deta_dt']
+        if cond_u is None:
+            cond_u = propagacao['du_dt']
+        if t is None:
+            t = self.dom.M
+        for i in range(t):
+
+            #primeiro estágio
+            propagacao_1 = self.forcante(cond_eta, cond_u)
+            eta_1 = cond_eta + self.dom.dt*propagacao_1["deta_dt"]
+            u_1 = cond_u + self.dom.dt*propagacao_1["du_dt"]
+      
+            
+            #segundo estágio
+            propagacao_2 = self.forcante(eta_1, u_1)
+            eta_2 = 0.75*cond_eta + 0.25*eta_1 + 0.25*self.dom.dt*propagacao_2["deta_dt"]
+            u_2 = 0.75*cond_u + 0.25*u_1 + 0.25*self.dom.dt*propagacao_2["du_dt"]        
+    
+            
+            #terceiro estágio
+            propagacao_3 = self.forcante(eta_2, u_2)
+            eta_3 = (1/3)*cond_eta + (2/3)*eta_2 + (2/3)*self.dom.dt*propagacao_3["deta_dt"]
+            u_3 = (1/3)*cond_u + (2/3)*u_2 + (2/3)*self.dom.dt*propagacao_3["du_dt"]        
+   
+            
+            # atualização para reiniciar o loop temporal
+            cond_eta = eta_3
+            cond_u = u_3
+
+
+        return {
+            'eta_final' : eta_3,
+            'u_final': u_3
+        } 
+    """
