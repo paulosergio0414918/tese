@@ -16,15 +16,27 @@ class SolucaoAguasRasasNaoLinear:
     def __init__(self,
                  dom: Dominio,
                  condicao: str = "condicao_paper",
-                 cfl: float = 1,
                  H: float = 1
                  ):
         
         self.dom = dom
         self.condicao = condicao
         self.variacao_energia = 0
-        self.cfl = cfl
+        self.cfl = self.dom.cfl
         self.H = H
+
+    def eta_zero(self, 
+                 x: np.ndarray = None
+                 ) -> np.ndarray:
+        """Define a condição inicial para variável η"""
+        condicao = ci.Funcoes2d()
+        if x is None:
+            x = self.dom.x
+        if self.condicao == "condicao_caixa":
+            return condicao.condicao_caixa(x)
+        
+        else:
+            return np.array(condicao.condicao_paper(x))
     
     def h_zero(self, 
                  x: np.ndarray = None
@@ -48,27 +60,6 @@ class SolucaoAguasRasasNaoLinear:
         
         elif isinstance(x,np.ndarray):
             return np.zeros(len(x))
-
-    """def solucao_analitica_eta(self,
-                          tempo: int = None
-                          ) -> np.ndarray:
-        #Fornece a solução analítica para η
-        if tempo is None:
-            tempo = self.dom.M   
-
-        return 0.5*(self.eta_zero(self.dom.x - (tempo+1)*self.dom.dt) \
-            + self.eta_zero(self.dom.x + (tempo+1)*self.dom.dt))
-    
-    def solucao_analitica_u(self,
-                          tempo: int = None
-                          ) -> np.ndarray:
-        #Fornece a solução analítica para u
-        if tempo is None:
-            iteracao = self.dom.M   
-
-        return 0.5*(self.eta_zero(self.dom.x - (tempo+1)*self.dom.dt) \
-            - self.eta_zero(self.dom.x + (tempo+1)*self.dom.dt))
-    """
 
     def alpha(self,
                  h: np.ndarray,
@@ -114,7 +105,61 @@ class SolucaoAguasRasasNaoLinear:
             'u_final': u_final,
             'dt': dt
         }
-    
+
+    def malha_c(
+                self,
+                eta: np.ndarray = None,
+                u: np.ndarray = None
+                ) -> np.ndarray:
+            #no caso não linear é prociso também contruir o vetor t
+            
+            eta_bar = np.array(eta)
+            u_bar = np.array(u)
+            dt = self.dom.cfl*self.dom.dx/np.max(np.abs(u_bar) + np.sqrt(self.H + eta_bar))
+
+            def right_side(eta_bar, u_bar): #obtain the right sido of equation           
+
+                def u_centro(vector): # put the vector u in centre cell
+                    return (np.roll(vector,1) + vector)/2
+
+                def eta_interface(vector): # put the eta vector in interface cell
+                    return (np.roll(vector,-1) + vector)/2
+
+                def diff_eta(vector): # calculate the finite diference 
+                    return  (np.roll(vector,1) - vector)/self.dom.dx
+
+                def diff_u(vector): # calculate the finite diference 
+                    return  (vector - np.roll(vector,-1) )/self.dom.dx
+
+
+                eta_n = diff_eta((self.H + eta_interface(eta_bar))*u_bar)
+                u_n = diff_u((0.5*u_centro(u_bar)*u_centro(u)+eta_bar))
+
+                return{
+                'eta_final': eta_n,
+                'u_final': u_n
+                 }
+
+            
+            #primeiro estágio ssprk33
+            eta_1 = eta_bar + dt * right_side(eta_bar, u)['eta_final']
+            u_1 = u_bar + dt * right_side(eta_bar, u)['u_final']
+            
+            #segundo estágio ssprk33
+            eta_2 = 0.75*eta_bar + 0.25*eta_1 + 0.25*dt*right_side(eta_1, u_1)['eta_final']
+            u_2 = 0.75*u_bar + 0.25*u_1 + 0.25*dt*right_side(eta_1, u_1)['u_final']      
+            
+            #terceiro estágio ssprk33
+            eta_3 = (1/3)*eta_bar + (2/3)*eta_2 + (2/3)*dt*right_side(eta_2, u_2)['eta_final']
+            u_3 = (1/3)*u_bar + (2/3)*u_2 + (2/3)*dt*right_side(eta_2, u_2)['u_final']       
+                        
+
+            return{
+                'eta_final': eta_3,
+                'u_final': u_3,
+                'dt': dt
+            }
+
     def muscl_ssprk(self,
                 cond_h: np.ndarray = None,
                 cond_u: np.ndarray = None,
@@ -220,12 +265,12 @@ class SolucaoAguasRasasNaoLinear:
             u_1 = u_bar + dt * muscl(h_bar,u_bar)['new_q_u']
             
             #segundo estágio ssprk33
-            h_2 = 0.75*h_bar + 0.25*h_1 + 0.25*self.dom.dt*muscl(h_1, u_1)['new_q_h']
-            u_2 = 0.75*u_bar + 0.25*u_1 + 0.25*self.dom.dt*muscl(h_1, u_1)['new_q_u']      
+            h_2 = 0.75*h_bar + 0.25*h_1 + 0.25*dt*muscl(h_1, u_1)['new_q_h']
+            u_2 = 0.75*u_bar + 0.25*u_1 + 0.25*dt*muscl(h_1, u_1)['new_q_u']      
             
             #terceiro estágio ssprk33
-            h_3 = (1/3)*h_bar + (2/3)*h_2 + (2/3)*self.dom.dt*muscl(h_2, u_2)['new_q_h']
-            u_3 = (1/3)*u_bar + (2/3)*u_2 + (2/3)*self.dom.dt*muscl(h_2, u_2)['new_q_u']      
+            h_3 = (1/3)*h_bar + (2/3)*h_2 + (2/3)*dt*muscl(h_2, u_2)['new_q_h']
+            u_3 = (1/3)*u_bar + (2/3)*u_2 + (2/3)*dt*muscl(h_2, u_2)['new_q_u']      
             
             return {
                     'h_final' : h_3,
@@ -246,6 +291,10 @@ class SolucaoAguasRasasNaoLinear:
             
         if solucao_h is None:
             solucao_h = self.h_zero()
+
+        else:
+            if modo == "malha_c":
+                print('Cuidado! Para malha c é necessário uma condição para η e para h.')
     
         if solucao_u is None:
             solucao_u = self.u_zero()
@@ -275,6 +324,12 @@ class SolucaoAguasRasasNaoLinear:
                     u_final = propagacao['u_final']
                     propagacao = self.rusanov_euler(eta = h_final, u= u_final)
 
+            return {
+                'h' : h_final,
+                'u'   : u_final,
+                'eta' : h_final-self.H
+            }
+
         elif modo == "muscl_ssprk22":
             
             if tempo is None:
@@ -299,7 +354,13 @@ class SolucaoAguasRasasNaoLinear:
                     h_final = propagacao['h_final']
                     u_final = propagacao['u_final']
                     propagacao = self.muscl_ssprk(eta = h_final, u= u_final, modo = "muscl_ssprk22")
-        
+
+            return {
+                'h' : h_final,
+                'u'   : u_final,
+                'eta' : h_final-self.H
+                }
+
         elif modo == "muscl_ssprk33":
         
             if tempo is None:
@@ -326,16 +387,59 @@ class SolucaoAguasRasasNaoLinear:
                     h_final = propagacao['h_final']
                     u_final = propagacao['u_final']
                     propagacao = self.muscl_ssprk(cond_h = h_final, cond_u= u_final, modo = "muscl_ssprk33")
+
+            return {
+                'h' : h_final,
+                'u'   : u_final,
+                'eta' : h_final-self.H
+                }
+
+        elif modo == "malha_c":
+            
+            solucao_eta = self.eta_zero()
+            #print(f'condição incial eta \n{np.max(solucao_eta)}')
+            #print(f'teste da raiz \n{np.max(np.max(solucao_eta))}')
+            
+            if tempo is None:
+                tempo = self.dom.M
+
+                propagacao = self.malha_c(eta = solucao_eta, u = solucao_u)
+                dt = propagacao['dt']
+                flag = 0
+                time = 0
+                while True:
+                    flag += 1
+                    time += propagacao['dt']
+                    eta_final = propagacao['eta_final']
+                    u_final = propagacao['u_final']
+                    propagacao = self.malha_c(eta = eta_final, u = u_final)
+                    
+                    if (flag > 1000) or (time > tempo):
+                        break
+            else:
+                time = 0
+                propagacao = self.malha_c(eta= solucao_eta, u = solucao_u)
+
+                for i in range(int(tempo)+1):
+                    
+                    eta_final = propagacao['eta_final']
+                    u_final = propagacao['u_final']
+                    #print(f'max da solução {np.max(u_final)}')
+                    propagacao = self.malha_c(eta = eta_final , u= u_final,)
+
+                    if i == tempo:
+                        time = propagacao['dt']
+
+
+            return {
+                'u'   : u_final,
+                'eta' : eta_final,
+                'time': time
+            }
                     
         else:
             print("Modo não definido")
        
-        return {
-                'h' : h_final,
-                'u'   : u_final,
-                'eta' : h_final - self.H
-            }
-
 class Validacao(SolucaoAguasRasasNaoLinear):
     """validação do método numérico"""
   
@@ -584,19 +688,21 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import construtor_de_graficos as cdg
     import numpy as np
-    cfl = 1
-    discretizacao = "rusanov_euler"
-    #discretizacao = "muscl_ssprk22"
-    dom = Dominio(N=1024, M=256) #cfl = 1
-    #dom = Dominio(N=1024, M=320) #cfl = 0.8
-    #dom = Dominio(N=1024, M=512) #cfl = 0.5
-    sol = SolucaoAguasRasasNaoLinear(dom, cfl= cfl)
     
+    #discretizacao = "rusanov_euler"
+    #discretizacao = "muscl_ssprk22"
+    discretizacao = "malha_c"
+    #dom = Dominio(N=1024, M=256) #cfl = 1
+    dom = Dominio(N=1024, M=320) #cfl = 0.8
+    #dom = Dominio(N=1024, M=512) #cfl = 0.5
+    sol = SolucaoAguasRasasNaoLinear(dom)
+    #sol = SolucaoAguasRasasNaoLinear(dom, cfl= cfl)
+    cfl = dom.cfl
     val = Validacao(dom, modo = discretizacao)
     
     
-    op = 2
-    it = 128
+    op = 6
+    it = 2**8
 
 
     if op == 6: # teste da ordem de convergênia da solução numérica
@@ -633,7 +739,7 @@ if __name__ == "__main__":
             plt.legend()
 
             #plt.show(block = False)
-            plt.pause(0.001)
+            plt.pause(0.1)
 
         plt.show()               
 

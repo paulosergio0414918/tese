@@ -27,6 +27,8 @@ class Dominio:
     self.L0 = L0   #Início do intervalo espacial não simétrico
     self.N = N     #Número de passos no espaço
     self.M = M     #Número de passos no tempo
+    self.dx = dx
+    self.dt = dt
     
 
     #Garantindo a simetria do intervalo
@@ -37,32 +39,32 @@ class Dominio:
     
     #Discretização no tempo
     if self.M == None:
-      self.M = (T-t0)/dt
+      self.M = (self.T-self.t0)/self.dt
       if not self.M.is_integer():
         print("Cuidado! Com esse h o número de passos de tempo não é inteiro!!")
         
     else:
-      self.dt = (T-t0)/self.M
+      self.dt = (self.T-self.t0)/(self.M)
     
-    self.t = np.linspace(t0, T, self.M)  #Tempos discretos
+    self.t = np.linspace(self.t0, self.T-self.dt, self.M)  #Tempos discretos
 
     #Discretização no espaço
     if self.N == None:
-      self.N = (self.L- self.L0)/dx
+      self.N = (self.L- self.L0)/self.dx
       if not self.N.is_integer():
         print("Cuidado! Com esse dx o número de pontos no espaço não é inteiro!!")
 
     else:
-      self.dx = (self.L-self.L0)/self.N
+      self.dx = (self.L-self.L0)/(self.N)
 
-    self.x = np.linspace(self.L0, self.L, self.N)  #Pontos no espaço
+    self.x = np.linspace(self.L0, self.L-self.dx, self.N)  #Pontos no espaço
 
 
     # discretização com malha descentralizada
-    self.x_centro = np.array([self.L0+i*self.dx for i in range(self.N)])
-    self.x_borda = np.array([self.L0+(i+0.5)*self.dx for i in range(self.N)])
+    self.x_centro = self.x
+    self.x_interface =  np.linspace(self.L0+self.dx/2, self.L+self.dx/2, self.N)
 
-    self.cfl = (self.T*self.N)/(2*self.L*self.M)
+    self.cfl = (self.T*(self.N))/(2*self.L*(self.M))
 
 
   def calculo_cfl(self,
@@ -121,9 +123,17 @@ class Dominio:
 
 
 if __name__ == "__main__":
-  dom = Dominio(M=512, N=1024)
+  dom = Dominio(N=512, M=160) #cfl = 1
+  #dom = Dominio(M=513, N=1025) #cfl = 0.5
+  print(f'último valor = {dom.x[-1]}')
+  print(dom.x[1]-dom.x[0])
+  
   print(f"dx = {dom.dx}")
   print(f"dt = {dom.dt}")
+  print(dom.dt/dom.dx)
+  print(dom.cfl)
+
+  dom.valores_cfl()
   
 
   

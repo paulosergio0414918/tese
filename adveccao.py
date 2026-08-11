@@ -1,188 +1,23 @@
-import numpy as np
-import random
-import matplotlib.pyplot as plt
-from scipy.optimize import minimize_scalar
-from rich.traceback import install
-install()
+import numpy as np                         # numerical package
+import random                              # generate noise in samples
+import matplotlib.pyplot as plt            # to create graphics 
+from scipy.optimize import minimize_scalar # to optimize learning rate 
+from rich.traceback import install         # to help debug
+from rich.console import Console           #to help on debug
+console = Console()                        # to enhance print() 
+install()                                  # to help debug
 
-import condicoes_iniciais as ci
-from dominio import Dominio
+import condicoes_iniciais as ci            # initial conditions hub
+from dominio import Dominio                # all domain parameters 
 
 
 class SolucaoAdveccao:
-    """
-    ============================================================================
-    SOLUÇÃO NUMÉRICA E ANALÍTICA DA EQUAÇÃO DE ADVECÇÃO 1D
-    ============================================================================
-    
-    OBJETIVO:
-    -----------
-    Discretizar e resolver a equação de advecção linear 1D: 
-    
-        ∂u/∂t + a ∂u/∂x = 0
-    
-    utilizando o método de Lax-Friedrichs. A classe também fornece a solução 
-    analítica para comparação e coleta amostras para assimilação de dados.
-    
-    DEPENDÊNCIAS:
-    ---------------
-    - numpy (np): operações matriciais e rolagem de arrays
-    - Dominio: classe externa que define o grid espacial e temporal
-    - ci.Funcoes2d: módulo com condições iniciais predefinidas
-    
-    ============================================================================
-    INICIALIZAÇÃO
-    ============================================================================
-    
-    Parâmetros:
-    -----------
-    dom : Dominio
-        Objeto da classe Dominio contendo a discretização do problema.
-        Deve possuir os seguintes atributos:
-        - dom.dt : passo de tempo
-        - dom.dx : passo espacial
-        - dom.N  : número de pontos na malha espacial
-        - dom.M  : número de pontos na malha temporal
-        - dom.x  : array com as coordenadas espaciais
-    
-    condicao : str, default="condicao_paper"
-        Tipo de condição inicial a ser utilizada:
-        - "condicao_paper" : condição inicial do artigo de referência
-        - "condicao_caixa" : função caixa (degrau)
-        - (outras strings) : fallback para "condicao_paper"
-    
-    a : int, default=1
-        Velocidade de advecção (constante positiva).
-        Valores típicos: 0.5, 1.0, 2.0
-    
-    Observação:
-    -----------
-        O parâmetro 'iteracoes' (comentado) pode ser reativado para controlar
-        o número de iterações em versões futuras.
-    
-    ============================================================================
-    ATRIBUTOS
-    ============================================================================
-    
-    self.dom : Dominio
-        Objeto com a discretização do problema (ver parâmetros acima).
-    
-    self.condicao : str
-        Tipo de condição inicial selecionada.
-    
-    self.a : int
-        Velocidade de advecção.
-    
-    ============================================================================
-    MÉTODOS PRINCIPAIS
-    ============================================================================
-    
-    1. CFL()
-    --------
-    Calcula o número de Courant-Friedrichs-Lewy (CFL):
-        λ = a * Δt / Δx
-    
-    Retorno:
-        float : Número CFL (deve ser ≤ 1 para estabilidade)
-    
-    Exemplo:
-        sol = SolucaoAdveccao(dominio, a=1)
-        cfl = sol.CFL()
-        print(f"CFL = {cfl:.3f}")
-    
-    --------
-    2. u_zero(x)
-    --------
-    Define a condição inicial u(x, t=0).
-    
-    Parâmetros:
-        x : float ou np.ndarray
-            Coordenada(s) espacial(is) para avaliação
-    
-    Retorno:
-        float ou np.ndarray : Valor(es) da condição inicial
-    
-    Comportamento:
-        - Se condicao == "condicao_caixa": retorna função caixa
-        - Caso contrário: retorna condição do paper (padrão)
-    
-    --------
-    3. Lax_Friedrichs(u)
-    --------
-    Aplica um passo do esquema de Lax-Friedrichs.
-    
-    Parâmetros:
-        u : tuple ou np.ndarray
-            Solução no instante atual t_n (array 1D)
-    
-    Retorno:
-        np.ndarray : Solução no instante t_{n+1}
-    
-    Esquema numérico:
-        u_j^{n+1} = 0.5[(1+λ)u_{j-1}^n + (1-λ)u_{j+1}^n]
-    
-    --------
-    4. solucao_numerica()
-    --------
-    Integra a equação ao longo do tempo usando Lax-Friedrichs.
-    
-    Retorno:
-        np.ndarray : Matriz (N x M) com a solução numérica completa
-                    - Linhas: posições espaciais
-                    - Colunas: instantes temporais
-    
-    Algoritmo:
-        1. Inicializa matriz de solução com zeros
-        2. Aplica condição inicial na primeira coluna
-        3. Para cada passo temporal: aplica Lax_Friedrichs
-    
-    --------
-    5. solucao_analitica()
-    --------
-    Calcula a solução analítica exata da equação de advecção.
-    
-    Retorno:
-        np.ndarray : Matriz (N x M) com a solução analítica
-    
-    Fórmula:
-        u(x, t) = u_zero(x - a·t)
-        onde u_zero é a condição inicial
-    
-    ============================================================================
-    EXEMPLO COMPLETO
-    ============================================================================
-    
-    import numpy as np
-    from dominio import Dominio
-    from condicoes_iniciais import Funcoes2d as ci
-     
-    # 1. Criar domínio
-    dom = Dominio(L=100, N=201, T=50, M=101)
-    
-    # 2. Instanciar solver
-    solver = SolucaoAdveccao(dom, condicao="condicao_caixa", a=1.5)
-     
-    # 3. Verificar estabilidade
-    cfl = solver.CFL()
-    print(f"CFL = {cfl:.3f}")
-    if cfl > 1:
-        print(" ATENÇÃO: CFL > 1 - instabilidade numérica!")
-        print(" Reduza Δt ou aumente Δx.")
-    
-    # 4. Calcular soluções
-    u_numerica = solver.solucao_numerica()
-    u_analitica = solver.solucao_analitica()
-    
-    # 5. Calcular erro
-    erro = np.max(np.abs(u_numerica - u_analitica))
-    print(f"Erro máximo = {erro:.2e}")
-    """
-
+   
     def __init__(self, 
-                 dom: Dominio, # um domínio criado pela classe Dominio 
-                 condicao: str = "condicao_paper", #condicao inicial para o problema
+                 dom: Dominio, # create all domain parameters  
+                 condicao: str = "condicao_paper", #chose the initial condition of the problem 
                  #teracoes: int = 100, # numero de iterações do metodo de solucao
-                 c: int = 1, #velocidade de adveccao
+                 c: int = 1, #advection speed 
                 ):
         
         self.condicao = condicao
@@ -335,8 +170,7 @@ class Assimilacao(SolucaoAdveccao):
                  standard_deviation: float = 0.0005,
                  condicao: str = "condicao_paper",
                  ruido: bool = False,
-                 modo: str = "numerico"
-                 
+                 modo: str = "numerico",
                  ):  
         self.n_amostras = n_amostras
         self.dom = dom
@@ -356,18 +190,119 @@ class Assimilacao(SolucaoAdveccao):
         #self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
         self.E = np.abs(np.mean(np.sum(self.matriz_ruido, axis=1)))
         self.tj = [((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2)*dom.dt for i in range(self.n_amostras)]
-
         #self.matriz_de_amostras_ruido()
+
+    def construtor_passos(self,
+                            print_info: bool = True):
+            
+            #FIXME: Por algum motivo o construtor de passos falha quando Delta_x = 0.1           
+            janela_de_observacao = self.dom.x[(self.dom.x>0) & (self.dom.x<2)]
+            
+            # 
+    
+            if print_info:        
+                print('---------------------------')
+                print(f'Delta x informado {self.Delta_x}')
+                print(f'x0 informado {self.first_sample}')
+                print('---------------------------')
+                print('')
+    
+            if (self.first_sample < 0) or (self.first_sample > 2) or (self.Delta_x < 0) or (self.Delta_x > 2): #eliminar possibilidades absurdas
+            
+                print('Valores incompatíves com a janela de observação e será adotado')
+                self.first_sample = janela_de_observacao[1] # retorna o primeiro valor não nulo da janela de observação
+                self.Delta_x = self.dom.dx                  # retorna o dx ótimo de assimilação
+    
+            else:
+                if np.any(np.isclose(janela_de_observacao, self.first_sample)): #x_0 é compatível com a discretização
+                    x_ultimo = self.first_sample + (self.n_amostras-1)*self.Delta_x
+                    #print(f'ultima amostras = {x_ultimo}')
+                    if np.any(np.isclose(janela_de_observacao,x_ultimo)):#x_j é compatível com a discretização
+                        pass #os dados informados são compatíves com discretização
+    
+                    else: #x_0 é compatível com a discretização mas xj não
+                        if self.Delta_x >= self.dom.dx:# se Delta_x> dx basta adaptar o Delta_x ao dx
+                            Delta_x_local = np.floor(self.Delta_x/self.dom.dx)*self.dom.dx if (np.floor(self.Delta_x/self.dom.dx) != 0) else self.dom.dx
+                            x_ultimo = self.first_sample + (self.n_amostras-1)*Delta_x_local
+                            if np.any(np.isclose(janela_de_observacao,x_ultimo)):# se a adaptação não ultrapaçar a janela ok
+                                self.Delta_x = Delta_x_local
+                            else:# se a adaptação ultrapassar a janela
+                                Delta_x_max = (2 - self.first_sample)/self.n_amostras #maior delta_x para a primeira amostra fornecida
+                                if Delta_x_max <= self.dom.dx: # testando a posição da primeira amostras
+                                    self.Delta_x = self.dom.dx
+                                    self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+                                else:
+                                    Delta_x_local = np.floor(Delta_x_max/self.dom.dx)*self.dom.dx if (np.floor(Delta_x_max/self.dom.dx) != 0) else self.dom.dx
+                                    self.Delta_x = Delta_x_local
+    
+                        else:
+                            self.Delta_x = self.dom.dx
+                            self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+    
+                else:
+                    self.first_sample =janela_de_observacao[np.argmin(np.abs(janela_de_observacao - self.first_sample))]
+                    x_ultimo = self.first_sample + (self.n_amostras-1)*self.Delta_x
+                    #print(f'ultima amostras = {x_ultimo}')
+                    if np.any(np.isclose(janela_de_observacao,x_ultimo)):#x_j é compatível com a discretização
+                        pass #os dados informados são compatíves com discretização
+    
+                    else: #x_0 é compatível com a discretização mas xj não
+                        if self.Delta_x >= self.dom.dx:# se Delta_x> dx basta adaptar o Delta_x ao dx
+                            Delta_x_local = np.floor(self.Delta_x/self.dom.dx)*self.dom.dx if (np.floor(self.Delta_x/self.dom.dx) != 0) else self.dom.dx
+                            x_ultimo = self.first_sample + (self.n_amostras-1)*Delta_x_local
+                            if np.any(np.isclose(janela_de_observacao,x_ultimo)):# se a adaptação não ultrapaçar a janela ok
+                                self.Delta_x = Delta_x_local
+                            else:# se a adaptação ultrapassar a janela
+                                Delta_x_max = (2 - self.first_sample)/self.n_amostras #maior delta_x para a primeira amostra fornecida
+                                if Delta_x_max <= self.dom.dx: # testando a posição da primeira amostras
+                                    self.Delta_x = self.dom.dx
+                                    self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+                                else:
+                                    Delta_x_local = np.floor(Delta_x_max/self.dom.dx)*self.dom.dx if (np.floor(Delta_x_max/self.dom.dx) != 0) else self.dom.dx
+                                    self.Delta_x = Delta_x_local
+    
+                        else:
+                            self.Delta_x = self.dom.dx
+                            self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+    
+    
+    
+    
+            xj = np.array([self.first_sample + i*self.Delta_x for i in range(self.n_amostras)])
+            #print(f'vetor xj = {xj}')
+            position = [np.where(np.isclose(self.dom.x, xj[i]))[0][0] for i in range(self.n_amostras)]
+            passos = [int(p) for p in position]
+            
+    
+            if print_info:   
+                print('---------------------------')
+                print(f'Delta x adotado {self.Delta_x}')
+                print(f'x0 adotado {self.first_sample}')
+                print('---------------------------')
+                print('')
+                if self.Delta_x > 0.1:
+                    console.print("[bold red] O texto exige Delta_x < 0.1 para garantir a assimilação [/bold red]")
+                self._print_passos_done = False
+    
+            print_info = False
+
+            return {
+                'passos' : passos,
+                'xj': xj 
+            }        
+
+
 
     def matriz_de_amostras(self):
         #if self._matriz_com_amostras is None:
         """Gera uma matriz contendo as amostras sem perturbação"""
-        matriz = np.zeros((self.dom.N ,self.n_amostras))
-        solu = SolucaoAdveccao(self.dom, self.condicao)
+        matriz = np.zeros((self.dom.N ,self.n_amostras))# gera a matriz que vai receber as amostras
+        solu = SolucaoAdveccao(self.dom, self.condicao) #gera a solução com base na condição a ser assimilada
+        #passo = self.construtor_passos(print_info= False)["passos"] #gera os passos sem informações extras
         
         for i, passo in enumerate(self.passos):
-            
-            matriz[:, i] = solu.solucao_analitica(iteracao=passo)
+            #for j in range(self.dom.M):
+            matriz[:, i] = solu.solucao_analitica(iteracao = passo)
             
         self._matriz_com_amostras = matriz
         return matriz
@@ -376,8 +311,8 @@ class Assimilacao(SolucaoAdveccao):
         """Gera uma matriz contendo as amostras com perturbação """
         #if self._matriz_com_amostras_ruido is None:
         if self._matriz_com_amostras is  None:
-            self.matriz_de_amostras()     
-        matriz_com_ruido = self._matriz_com_amostras.copy()
+           self.matriz_de_amostras()     
+        matriz_com_ruido = self.matriz_de_amostras().copy()
         
         #for j in range(self.n_amostras):
             #matriz_com_ruido[:,j] += self.vetor_ruido
@@ -578,8 +513,12 @@ class Assimilacao(SolucaoAdveccao):
                   iter: int = 10):
         diferenca = []
         for i in range(iter):
-            diferenca.append(np.abs(np.mean((self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i)))))
-            #diferenca.append(float(np.linalg.norm(self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i))))
+            #diferenca.append(np.abs(np.mean((self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i)))))
+            diferenca.append(
+                float(
+                    np.linalg.norm(self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i))/np.linalg.norm(self.sol.u_zero(dom.x))
+                    )
+                    )
 
         return diferenca
     
@@ -608,22 +547,60 @@ if __name__ == "__main__":
     from rich import print
     from rich.table import Table
     ###### parâmetros #######
-    op = 22
+    op = 20
     ruido = True
-    iteracoes = 32
+    iteracoes = 64
     amos = 2
 
 
     ###### objetos ##########
     dom = dominio.Dominio()
-    ass = Assimilacao(dom, modo="analitico", n_amostras = amos, ruido=ruido)
+    
     sol = SolucaoAdveccao(dom)
     val = Validacao()
+    ass = Assimilacao(dom, modo="analitico", n_amostras = amos,
+                      ruido=ruido)
     
     ##### lista de testes ##########
-    if op == 22: #tabela do resultado do professor
-        sd_increments = 5
-        samples = 5 #não alterar estevalor
+    if op == 23: #gráfico do resultado do professor
+        samples = 5
+        sd_increments = 10        
+        desvio = []
+        results = np.zeros((sd_increments , samples))
+
+        for i in tqdm(range(sd_increments)):
+            sd = 10**(-3)*i*5
+            desvio.append(sd)
+            for j in range(samples):
+                ass_local = Assimilacao(dom, modo="numerico", n_amostras = j+2, ruido=ruido, standard_deviation = sd)
+                results[i,j] = ass_local.diferenca(iter = iteracoes)[-1]
+
+        # Nomes das colunas (rótulos para a legenda)
+        nomes_amostras = ['2 amostras', '3 amostras', '4 amostras', '5 amostras', '6 amostras']
+
+        # Cria a figura
+        plt.figure(figsize=(10, 6))
+
+        # Plota cada coluna como uma curva separada
+        for i, nome in enumerate(nomes_amostras):
+            plt.semilogy(desvio, results[:, i], marker='o', label=nome)  # escala log no eixo y
+
+        # Personalização
+        plt.xlabel('Desvio padrão')
+        plt.ylabel(r"$|\phi^{(t)}(x) - \phi^{(n)}(x)|$")
+        plt.title(f'Erro de reconstrução após {iteracoes} iterações')
+        plt.grid(True, which='both', linestyle='--', alpha=0.7)
+        plt.legend()
+
+        # Ajusta os ticks do eixo x para os valores exatos
+        plt.xticks(desvio, rotation=45)
+
+        plt.tight_layout()
+        plt.show()
+
+    elif op == 22: #tabela do resultado do professor
+        sd_increments = 10
+        samples = 5 #não alterar este valor
         tab = Table(title = f"Diferença após {iteracoes} iterações.")
         tab.add_column("Desvio padrão", justify = "center")
         tab.add_column("2 amostras", justify = "center")
@@ -1141,7 +1118,10 @@ if __name__ == "__main__":
         plt.show()
 
     elif op == 13: #imprimir os passos das amostras
-    
+        caso1 = ass.construtor_passos()
+        #print(f'passos de amostragem {caso1['passos']}')
+        #print(f'Vetor xj = {caso1['xj']}')
+        #print(len(dom.x))
         print(ass.passos)
 
     elif op == 12: #Grafico de todas as amostras
@@ -1166,6 +1146,49 @@ if __name__ == "__main__":
         ax.set_xticks([i for i in range(amos)])
         ax.view_init(25, -60)
         plt.show()
+
+
+        '''import numpy as np
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D
+        passo = ass.construtor_passos(print_info= False)["passos"]
+        matriz = ass.matriz_de_amostras()   # shape: (self.dom.N, self.dom.M)
+        t = dom.t   # array de shape (M,)    
+        x_posicoes = dom.x   # pode substituir por self.dom.x se existi   
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')   
+        # Itera sobre todas as N linhas (cada uma corresponde a uma posição x)
+        for j in range(amos):
+            i = passo[j]
+            x_fixo = x_posicoes[i]                # valor de x para a linha i
+            curva = matriz[i, :]                  # valores no tempo (vetor de tamanho M)
+            ax.plot(np.full_like(t, x_fixo),      # eixo X constante
+                    t,                            # eixo Y = tempo
+                    curva,                        # eixo Z = amplitude
+                    linewidth=1,                  # linha fina
+                    alpha=0.7,                    # transparência
+                    color='blue')                 # cor única (pode variar com colormap)
+        
+        # Configurações dos eixos
+        #ax.set_xlabel('Posição x')
+        ax.set_ylabel('Tempo t')
+        ax.set_zlabel(r'$y(t)$')
+        
+        # Força o eixo X a mostrar todo o intervalo [-4, 4]
+        ax.set_xlim(dom.L0, dom.L)
+        valores_x_plotados = [x_posicoes[passo[j]] for j in range(amos)]
+        ticks_regulares = np.linspace(0, dom.L, 3)
+        ticks_completos = np.unique(np.concatenate([ticks_regulares, valores_x_plotados]))
+        ax.set_xticks(ticks_completos)
+        ax.tick_params(axis='x', labelrotation=45)
+        # Ajusta o ângulo de visão
+        ax.view_init(25, -60)
+        
+        # Rotaciona o rótulo do eixo Z para horizontal (opcional)
+        zlabel = ax.zaxis.label
+        zlabel.set_rotation(0)
+        
+        plt.show()'''
 
     elif op == 11: #Constatação do resultado teórico para advecção
             ass1 = Assimilacao(dom, modo="analitico", ruido= True, n_amostras=2)                        

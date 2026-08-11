@@ -1,4 +1,45 @@
 **************************************************
+*******  vscode hotkeys  ************
+**************************************************
+ctrl + j -> open terminal
+crtl + b -> close sidebar
+ctrl + p -> open files
+code . -> open vscode from terminal
+ctrl + w -> close files
+crtl + shift + n -> open problems panel
+ctrl + k ctrl + t -> change theme
+crtl + , -> settings
+ctrl + shift + ' -> open new terminal FAIL
+CTRL + K Z -> open zen mode
+ctrl + \ -> file (window) side by side
+ctrl +1 or ctrl + 2 -> change window side by side
+ctrl + w -> close vscode window
+ctrl + tab -> change file
+ctrl + shift + p search for hotkeys
+ctrl + shift + t reopen last closed file
+alt + click -> edit lots lines simultaneously
+shift + alt + click -> edit lots lines simultaneously
+ctrl + shift + l -> select all same words
+ctrl + d -> find the next same word
+alt + arrow -> change position of a line
+shift + alt + right arrow -> select block of codes
+ctrl + g -> go to number line
+ctrl + u -> back to previous line
+ctrl + k + ctrl + x -> delete unnecessary spaces
+ctrl + end -> go to lest line of code
+ctrl + home -> go to first line of code
+select the word + ctrl + f -> find all same word in code
+ctrl + backspace -> delete a word completely
+ctrl + delete -> delete a word completely
+ctrl + x -> delete a line completely
+ctrl + space -> show suggestions
+ctrl + / -> change line to comment
+
+
+
+
+
+**************************************************
 *******  Object-oriented programming  ************
 **************************************************
 

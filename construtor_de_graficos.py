@@ -80,8 +80,8 @@ class Grafico2d:
 
     def plot2d(self):
         if self.y2 is not None:
-            plt.plot(self.x, self.y2, label = self.y2_name)
-            plt.plot(self.x, self.y1, label = self.y1_name)
+            plt.plot(self.x, self.y2,'o--', label = self.y2_name)
+            plt.plot(self.x, self.y1,'*-', label = self.y1_name)
             plt.legend()
             plt.show()
 
