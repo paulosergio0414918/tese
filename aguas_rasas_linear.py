@@ -629,7 +629,7 @@ class Assimilacao(SolucaoAguasRasas):
         
     def matriz_de_amostras_ruido(self):
         """Gera uma matriz contendo as amostras com perturbação """
-        if self._matriz_com_amostras_ruido is None:
+        if self.matriz_com_amostras_ruido is None:
             self.matriz_de_amostras()     
         matriz_com_ruido = self.matriz_com_amostras.copy() # gera uma cópia da matriz de amostras para não precisar construir outra
                 
@@ -725,6 +725,44 @@ class Assimilacao(SolucaoAguasRasas):
                 'u_grad': u_3
             } 
     
+    def custo_assimilacao(self,
+                          eta: np.ndarray = None,
+                          ):
+        """Retorna o custo de assimilação para cada iteração."""
+        steps = self.construtor_passos()['passos'] #gera o indice onde estão as amostras no vetor de assiilação
+        diff= np.zeros((self.n_amostras, self.dom.M))# vai receber as diferenças internas do custo
+        if self.ruido: #condicional para construir o y_j que são as amostas
+            self.matriz_de_amostras_ruido()
+            y_j = self.matriz_com_amostras_ruido # é uma matriz de ordem n_amostrasxM
+        else:
+            self.matriz_de_amostras()
+            y_j = self.matriz_com_amostras
+        
+        for i in range(self.dom.M): # loop para construir a diferença presente no custo
+            eta_f = self.solucao_numerica(solucao_eta=eta, solucao_u=np.zeros(self.dom.N), tempo=i)['eta'] # constroi o eta^f dada a condicao tomando u = 0
+            # Atualiza solução
+            for j in range(self.n_amostras):
+                diff[j,i] = (eta_f[steps[j]] - y_j[j,i])**2
+        sum_diff = np.sum(diff, axis=0) #retorna um vetor de tamanho self.M com a soma das n_amostras colunas 
+
+        def trapezoidal_rule(x): # integral via regra do trapézio
+            s=0
+            n = len(x)
+            for i in range(1,n-1,1):
+                s += x[i]
+            return (x[0] + 2*s + x[-1])*self.dom.dt/2
+
+        return 0.5 * trapezoidal_rule(sum_diff ) # retorna a integral numérica do quadrado da diferença        
+  
+    def diferenca(self,
+                  iter: int = 10):
+        diferenca = []
+        for i in range(iter):
+            #diferenca.append(np.abs(np.mean((self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i)))))
+            diferenca.append(float(np.linalg.norm(self.sol.u_zero(self.dom.x)-self.gradiente_descendente(it = i)['eta_final'])/np.linalg.norm(self.sol.u_zero(self.dom.x))))
+
+        return diferenca
+
     def gradiente_descendente(self,
                               it:int = 10):
         """Calculo do gradiente descendente considerando n=it iterações"""
@@ -733,6 +771,7 @@ class Assimilacao(SolucaoAguasRasas):
 
         
         error = []
+        custo = []
         if self.modo == "analitico":
             solucao_final_eta = np.zeros(self.dom.N)
             for _ in range(it):
@@ -749,60 +788,17 @@ class Assimilacao(SolucaoAguasRasas):
                 solucao_final_eta = solucao_final_eta - 0.1*grad["eta_grad"]
                 solucao_final_u = solucao_final_u - 0.1*grad["u_grad"]
                 error.append(reconstruction_error(solucao_final_eta))
+                custo.append(self.custo_assimilacao(solucao_final_eta))
             return {
                     'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
                     'u_final': solucao_final_u, # u após it execuções do gradiente descendente con learning rate fixo
-                    'error' : error # Erro de reconstrução em cada passo do gradiente descendente
+                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                    'custo': custo # funcional custo de cada passo do gradiente descendente
                 }
 
-    def custo_assimilacao(self,
-                          eta: np.darray = None,
-                          ):
-        """Retorna o custo de assimilação para cada iteração."""
-        steps = self.construtor_passos()['passos']
-        diff= np.zeros((self.n_amostras, self.dom.M))
-        if self.ruido:
-            self.matriz_de_amostras_ruido()
-            y_j = self.matriz_com_amostras_ruido
-        else:
-            self.matriz_de_amostras()
-            y_j = self.matriz_com_amostras
+
+
         
-        for i in range(self.dom.M):
-            eta_f = self.solucao_numerica(solucao_eta=eta, solucao_u=np.zeros(self.dom.N), tempo=i)['eta']
-            # Atualiza solução
-            for j in range(self.n_amostras):
-                diff = (eta_f[steps[j]] - y_j[steps[j],i])**2
-            
-        #TODO:Aqui deve ser inserido alguma método de integração numérica.
-        # !Parei aqui, na construção do custo de assimilação.               
-
-            
-  
-    def diferenca(self,
-                  iter: int = 10):
-        diferenca = []
-        for i in range(iter):
-            #diferenca.append(np.abs(np.mean((self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i)))))
-            diferenca.append(float(np.linalg.norm(self.sol.u_zero(self.dom.x)-self.gradiente_descendente(it = i)['eta_final'])/np.linalg.norm(self.sol.u_zero(self.dom.x))))
-
-        return diferenca
-    
-    def custo_solucao(self, solucao):
-        """Calcula o custo J(x) para uma dada solução (sem gradiente)."""
-        custo = 0.0
-        for i, passo in enumerate(self.passos):
-            sol_propagada = solucao.copy()
-            for _ in range(passo):
-                sol_propagada = self.sol.Lax_Friedrichs(sol_propagada)
-            if self.ruido:
-                obs = self._matriz_com_amostras_ruido[:, i]
-            else:
-                obs = self._matriz_com_amostras[:, i]
-            diff = sol_propagada - obs
-            custo += 0.5 * np.dot(diff, diff)
-        return custo
-
 if __name__ == "__main__":
     import dominio
     import matplotlib.pyplot as plt
@@ -810,7 +806,7 @@ if __name__ == "__main__":
     import numpy as np
 
     ###opção
-    op = 7
+    op = 13
     iteracoes = 2**7
 
     #### Variáveis
@@ -834,43 +830,8 @@ if __name__ == "__main__":
                        ruido=ruido,
                        first_sample = 1, # paper uses first_sample = 0.2
                        Delta_x =  1 ) # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
-    if op == 13: #! construir o gráfico do erro de reconstrução da condição incial
-        samples = 5
-        sd_increments = 10        
-        desvio = []
-        results = np.zeros((sd_increments , samples))
-        for i in range(sd_increments):
-            sd = 10**(-3)*i*5
-            desvio.append(sd)
-            for j in range(samples):
-                ass_local = Assimilacao(dom, modo = modo, n_amostras = j+2, ruido=ruido, standard_deviation = sd)
-                erro = ass_local.gradiente_descendente(it = iteracoes)['error']
-                results[i,j] = erro[-1]
-            print(f'Encerrado para o {sd_increments}º incremento')
-        # Nomes das colunas (rótulos para a legenda)
-        nomes_amostras = ['2 amostras', '3 amostras', '4 amostras', '5 amostras', '6 amostras']
 
-        # Cria a figura
-        plt.figure(figsize=(10, 6))
-
-        # Plota cada coluna como uma curva separada
-        for i, nome in enumerate(nomes_amostras):
-            plt.semilogy(desvio, results[:, i], marker='o', label=nome)  # escala log no eixo y
-
-        # Personalização
-        plt.xlabel('Desvio padrão')
-        plt.ylabel("|phi^t(x) - phi^n(x)|")
-        plt.title(f'Erro de reconstrução após {iteracoes} iterações')
-        plt.grid(True, which='both', linestyle='--', alpha=0.7)
-        plt.legend()
-
-        # Ajusta os ticks do eixo x para os valores exatos
-        plt.xticks(desvio, rotation=45)
-
-        plt.tight_layout()
-        plt.show()
-
-    elif op == 12: #teste do custo de assimilacao
+    if op == 20: #validação teorica
         ass10 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 ) 
         result10 = ass10.gradiente_descendente(it=iteracoes)['error']
         ass11 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=True, first_sample = 0.2, Delta_x =  0.09 ) 
@@ -910,7 +871,59 @@ if __name__ == "__main__":
         plt.title(f'Erro de reconstrução após {iteracoes} $\Delta x = $ {ass.Delta_x}.')
         plt.legend()
         plt.show()
- 
+
+
+    elif op == 13: # construir o gráfico do erro de reconstrução da condição incial
+        ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass5 = Assimilacao(dom, modo= modo, n_amostras = 5, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass6 = Assimilacao(dom, modo= modo, n_amostras = 6, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        erro2 = ass2.gradiente_descendente(it=iteracoes)['error']
+        erro3 = ass3.gradiente_descendente(it=iteracoes)['error']
+        erro4 = ass4.gradiente_descendente(it=iteracoes)['error']
+        erro5 = ass5.gradiente_descendente(it=iteracoes)['error']
+        erro6 = ass6.gradiente_descendente(it=iteracoes)['error']
+
+        plt.ylabel("||(phi^t(x) - phi^n(x))||/||phi^t(x)||")
+        plt.xlabel('Número de iterações')
+        plt.yscale('log')
+        #plt.ylabel('J^(n)/J^(0)')
+        plt.scatter([i+1 for i in range(iteracoes)], erro2/erro2[0] , lw = 0.5, label = '2 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro3/erro3[0] , lw = 0.5, label = '3 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro4/erro4[0] , lw = 0.5, label = '4 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro5/erro5[0] , lw = 0.5, label = '5 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro6/erro6[0] , lw = 0.5, label = '6 amostras sem ruido' )
+        plt.title(f'Erro de reconstrução após {iteracoes} ietraçõe considerando $Delta_x = $ {ass2.Delta_x}.')
+        plt.legend()
+        plt.show()
+
+    elif op == 12: # teste do custo de assimilação
+        
+        ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass5 = Assimilacao(dom, modo= modo, n_amostras = 5, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass6 = Assimilacao(dom, modo= modo, n_amostras = 6, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        custo2 = ass2.gradiente_descendente(it=iteracoes)['custo']
+        custo3 = ass3.gradiente_descendente(it=iteracoes)['custo']
+        custo4 = ass4.gradiente_descendente(it=iteracoes)['custo']
+        custo5 = ass5.gradiente_descendente(it=iteracoes)['custo']
+        custo6 = ass6.gradiente_descendente(it=iteracoes)['custo']
+
+        #plt.ylabel(fr"$|\\phi^t(x) - \\phi^n(x)|$")
+        plt.xlabel('Número de iterações')
+        plt.yscale('log')
+        plt.ylabel('J^(n)/J^(0)')
+        plt.scatter([i+1 for i in range(iteracoes)], custo2/custo2[0] , lw = 0.5, label = '2 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo3/custo3[0] , lw = 0.5, label = '3 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo4/custo4[0] , lw = 0.5, label = '4 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo5/custo5[0] , lw = 0.5, label = '5 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo6/custo6[0] , lw = 0.5, label = '6 amostras sem ruido' )
+        plt.title(f'Custo de assimilação após {iteracoes} $\Delta x = $ {ass2.Delta_x}.')
+        plt.legend()
+        plt.show()
+
     elif op == 11: # teste gradiente numerico
         result = ass.gradiente_descendente(it=iteracoes)
         grf = True
@@ -1074,6 +1087,44 @@ if __name__ == "__main__":
 
     elif op == -1: #lixo 
         '''
+        ###################### versão 11/08/2026 ###########################
+        ########################### op == 13  ##############################
+
+
+                samples = 5
+        sd_increments = 10        
+        desvio = []
+        results = np.zeros((sd_increments , samples))
+        for i in range(sd_increments):
+            sd = 10**(-3)*i*5
+            desvio.append(sd)
+            for j in range(samples):
+                ass_local = Assimilacao(dom, modo = modo, n_amostras = j+2, ruido=ruido, standard_deviation = sd)
+                erro = ass_local.gradiente_descendente(it = iteracoes)['error']
+                results[i,j] = erro[-1]
+            print(f'Encerrado para o {sd_increments}º incremento')
+        # Nomes das colunas (rótulos para a legenda)
+        nomes_amostras = ['2 amostras', '3 amostras', '4 amostras', '5 amostras', '6 amostras']
+
+        # Cria a figura
+        plt.figure(figsize=(10, 6))
+
+        # Plota cada coluna como uma curva separada
+        for i, nome in enumerate(nomes_amostras):
+            plt.semilogy(desvio, results[:, i], marker='o', label=nome)  # escala log no eixo y
+
+        # Personalização
+        plt.xlabel('Desvio padrão')
+        plt.ylabel("|phi^t(x) - phi^n(x)|")
+        plt.title(f'Erro de reconstrução após {iteracoes} iterações')
+        plt.grid(True, which='both', linestyle='--', alpha=0.7)
+        plt.legend()
+
+        # Ajusta os ticks do eixo x para os valores exatos
+        plt.xticks(desvio, rotation=45)
+
+        plt.tight_layout()
+        plt.show()
 
         ###################### versão 30/08/2026 ###########################
         ########################### forçante  ##############################

@@ -1,10 +1,14 @@
-#aguas rasas não linear
-import numpy as np
-from rich.traceback import install
-from tqdm import tqdm
-import random
-import matplotlib.pyplot as plt
-install()
+#Linear shallow water 
+import numpy as np # numerical package
+import math # mathematical package
+from rich.traceback import install # to help debug
+from rich import print # create beautiful tables
+from rich.console import Console #to help on debug 
+from tqdm import tqdm # para show execute time 
+import random # generate noise in samples
+import matplotlib.pyplot as plt # to create graphics 
+console = Console() # to enhance print() 
+install() # to help debug
 
 import condicoes_iniciais as ci
 from dominio import Dominio
@@ -280,10 +284,11 @@ class SolucaoAguasRasasNaoLinear:
                 }
 
     def solucao_numerica(self,
-                         solucao_h:  np.ndarray = None, # condição incial para eta
+                         solucao_eta: np.ndarray = None, # condição incial para eta
                          solucao_u: np.ndarray = None, #condição inicial para u
+                         solucao_h:  np.ndarray = None, # condição incial para h
                          tempo: int = None, # tempo de execução do método
-                         modo: str = "muscl_ssprk33" # modelo de execução
+                         modo: str = "malha_c" # modelo de execução
                          ):
         """Calcula a solução de águas rasas após vários instantes."""
 
@@ -298,7 +303,10 @@ class SolucaoAguasRasasNaoLinear:
     
         if solucao_u is None:
             solucao_u = self.u_zero()
-          
+
+        if solucao_eta is None:
+            solucao_eta = self.eta_zero()
+
         if modo == "rusanov_euler":
 
             if tempo is None:
@@ -396,7 +404,7 @@ class SolucaoAguasRasasNaoLinear:
 
         elif modo == "malha_c":
             
-            solucao_eta = self.eta_zero()
+            
             #print(f'condição incial eta \n{np.max(solucao_eta)}')
             #print(f'teste da raiz \n{np.max(np.max(solucao_eta))}')
             
@@ -607,45 +615,165 @@ class Validacao(SolucaoAguasRasasNaoLinear):
         plt.title(f"Evolução da energia para {modo}.")
         plt.yscale('log')
         plt.show()
+
+
+#TODO:
+#! implementar o método de obtenção de amostras
+#! calculo do custo funcional
+#! calculo do erro de reconstrução
+#! implementar o gradiente
+#! implementar o gradiente descedente
+#! constuir o gráfico do custo de funcional
+#! construir o grafico da reconstrução da condição inicial.
      
 class Assimilacao(SolucaoAguasRasasNaoLinear):
 
     def __init__(self,
                  dom: Dominio, # um domínio criado pela classe Dominio
-                 c: float = 1, #velocidade de advecção
                  n_amostras: int = 2,
+                 standard_deviation: float = 0.0005,
                  condicao: str = "condicao_paper",
                  ruido: bool = False,
-                 modo: str = "analitico"
-                 ):  
+                 modo: str = "malha_c",
+                 Delta_x: float = 0.09,
+                 first_sample: float = 0.2
+                 ):
+
+        self.Delta_x = Delta_x
+        self.first_sample = first_sample  
+
         self.n_amostras = n_amostras
         self.dom = dom
-        self.c = c
+        self.standard_deviation = standard_deviation
         self.condicao = condicao
-        self.passos = [int((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2) for i in range(self.n_amostras)]
         self.ruido = ruido
         self.sol = SolucaoAguasRasasNaoLinear(self.dom)
         self.modo = modo
         self._matriz_com_amostras = None
         self._matriz_com_amostras_ruido = None
         self.vetor_custo = []
-        self.vetor_ruido = [random.uniform(0, 0.005) for i in range(self.dom.N)]
+        #self.vetor_ruido = [random.uniform(0, 0.005) for i in range(self.dom.N)]
+        self.matriz_ruido = np.array([[random.gauss(0, self.standard_deviation) for _ in range(self.dom.M)] for _ in range(self.n_amostras)]) # matriz de ordem n_amostrasxM
         self.E = np.linalg.norm(self.vetor_ruido)/self.n_amostras
         self.tj = [((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2)*dom.dt for i in range(self.n_amostras)]
 
         self.matriz_de_amostras_ruido()
+    #TODO: Falta testar o construtor de passos
+    def construtor_passos(self,
+                            print_info: bool = False):
+            
+            #FIXME:
+            #! Por algum motivo o construtor de passos retorna erro quando usamos delta_x = 0.1 
+            #! Investigar após a reunião com o professor pedro
+            
+            janela_de_observacao = self.dom.x[(self.dom.x>0) & (self.dom.x<2)]
+            
+            # print_info = True
+    
+            if print_info:        
+                print('---------------------------')
+                print(f'Delta x informado {self.Delta_x}')
+                print(f'x0 informado {self.first_sample}')
+                print('---------------------------')
+                print('')
+    
+            if (self.first_sample < 0) or (self.first_sample > 2) or (self.Delta_x < 0) or (self.Delta_x > 2): #eliminar possibilidades absurdas
+            
+                print('Valores incompatíves com a janela de observação e será adotado')
+                self.first_sample = janela_de_observacao[1] # retorna o primeiro valor não nulo da janela de observação
+                self.Delta_x = self.dom.dx # retorna o dx ótimo de assimilação
+    
+            else:
+                if np.any(np.isclose(janela_de_observacao, self.first_sample)): #x_0 é compatível com a discretização
+                    x_ultimo = self.first_sample + (self.n_amostras-1)*self.Delta_x
+                    #print(f'ultima amostras = {x_ultimo}')
+                    if np.any(np.isclose(janela_de_observacao,x_ultimo)):#x_j é compatível com a discretização
+                        pass #os dados informados são compatíves com discretização
+    
+                    else: #x_0 é compatível com a discretização mas xj não
+                        if self.Delta_x >= self.dom.dx:# se Delta_x> dx basta adaptar o Delta_x ao dx
+                            Delta_x_local = np.floor(self.Delta_x/self.dom.dx)*self.dom.dx if (np.floor(self.Delta_x/self.dom.dx) != 0) else self.dom.dx
+                            x_ultimo = self.first_sample + (self.n_amostras-1)*Delta_x_local
+                            if np.any(np.isclose(janela_de_observacao,x_ultimo)):# se a adaptação não ultrapaçar a janela ok
+                                self.Delta_x = Delta_x_local
+                            else:# se a adaptação ultrapassar a janela
+                                Delta_x_max = (2 - self.first_sample)/self.n_amostras #maior delta_x para a primeira amostra fornecida
+                                if Delta_x_max <= self.dom.dx: # testando a posição da primeira amostras
+                                    self.Delta_x = self.dom.dx
+                                    self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+                                else:
+                                    Delta_x_local = np.floor(Delta_x_max/self.dom.dx)*self.dom.dx if (np.floor(Delta_x_max/self.dom.dx) != 0) else self.dom.dx
+                                    self.Delta_x = Delta_x_local
+    
+                        else:
+                            self.Delta_x = self.dom.dx
+                            self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+    
+                else:
+                    self.first_sample =janela_de_observacao[np.argmin(np.abs(janela_de_observacao - self.first_sample))]
+                    x_ultimo = self.first_sample + (self.n_amostras-1)*self.Delta_x
+                    #print(f'ultima amostras = {x_ultimo}')
+                    if np.any(np.isclose(janela_de_observacao,x_ultimo)):#x_j é compatível com a discretização
+                        pass #os dados informados são compatíves com discretização
+    
+                    else: #x_0 é compatível com a discretização mas xj não
+                        if self.Delta_x >= self.dom.dx:# se Delta_x> dx basta adaptar o Delta_x ao dx
+                            Delta_x_local = np.floor(self.Delta_x/self.dom.dx)*self.dom.dx if (np.floor(self.Delta_x/self.dom.dx) != 0) else self.dom.dx
+                            x_ultimo = self.first_sample + (self.n_amostras-1)*Delta_x_local
+                            if np.any(np.isclose(janela_de_observacao,x_ultimo)):# se a adaptação não ultrapaçar a janela ok
+                                self.Delta_x = Delta_x_local
+                            else:# se a adaptação ultrapassar a janela
+                                Delta_x_max = (2 - self.first_sample)/self.n_amostras #maior delta_x para a primeira amostra fornecida
+                                if Delta_x_max <= self.dom.dx: # testando a posição da primeira amostras
+                                    self.Delta_x = self.dom.dx
+                                    self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+                                else:
+                                    Delta_x_local = np.floor(Delta_x_max/self.dom.dx)*self.dom.dx if (np.floor(Delta_x_max/self.dom.dx) != 0) else self.dom.dx
+                                    self.Delta_x = Delta_x_local
+    
+                        else:
+                            self.Delta_x = self.dom.dx
+                            self.first_sample = 2 - (self.n_amostras+3)*self.dom.dx
+    
+    
+    
+    
+            xj = np.array([self.first_sample + i*self.Delta_x for i in range(self.n_amostras)])
+            #print(f'vetor xj = {xj}')
+            position = [np.where(np.isclose(self.dom.x, xj[i]))[0][0] for i in range(self.n_amostras)]
+            passos = [int(p) for p in position]
+            
+    
+            if print_info:   
+                print('---------------------------')
+                print(f'Delta x adotado {self.Delta_x}')
+                print(f'x0 adotado {self.first_sample}')
+                print('---------------------------')
+                print('')
+                if self.Delta_x > 0.1:
+                    console.print("[bold red] O texto exige Delta_x < 0.1 para garantir a assimilação [/bold red]")
+                self._print_passos_done = False
+    
+            
+            return {
+                'passos' : passos,
+                'xj': xj 
+            }
 
     def matriz_de_amostras(self):
         #if self._matriz_com_amostras is None:
         """Gera uma matriz contendo as amostras sem perturbação"""
-        matriz = np.zeros((self.dom.N ,self.n_amostras))
-        solu = SolucaoAguasRasasNaoLinear(self.dom, self.condicao)
+        matriz = np.zeros((self.n_amostras, self.dom.M)) # as amostras serão armazenadas em linhas 
+        steps = self.construtor_passos()['passos']
         
-        for i, passo in enumerate(self.passos):
+        #FIXME:
+        #! temos um problema! Como sincronizar o tempo no caso não linear.
+        for i in range(self.n_amostras):
+            for j in range(self.dom.M):
+                soluction = sol.solucao_numerica(modo='malha_c', tempo = j)
+                matriz[i, j] = soluction[steps[i]]
             
-            matriz[:, i] = solu.solucao_analitica_eta(iteracao=passo)
-            
-        self._matriz_com_amostras = matriz
+        self.matriz_com_amostras = matriz
         return matriz
         
     def matriz_de_amostras_ruido(self):

@@ -35,18 +35,25 @@ Em todos os arquivos citados existem exemplos de execução em if __name__ == "_
 - [x] Obter a assimilação de dados de forma analítica como proposto em minha tese
 
 ## CODE ISSUES ÁGUAS RASAS LINEARIZADA
-- [x] Discretizar a equação via volumes finitos usando Godunov/Euler e muscl/ssprk22
+- [x] Discretizar a equação via volumes finitos usando Godunov/Euler, muscl/ssprk22 e malha c
 - [x] Calcular as condições iniciais
-- [] Coletar os dados através das condições inicias
-- [] Obter a assimilação de dados de forma numérica como dado em 2.
-- [] Obter a assimilação de dados de forma analítica como proposto em minha tese
+- [x] Coletar os dados através das condições inicias
+- [x] Obter a assimilação de dados de forma numérica como dado em 2.
+- [x] Obter a assimilação de dados de forma analítica como proposto em minha tese
 
 ## CODE ISSUES ÁGUAS RASAS NÃO LINEARIZADAS
-- [x] Discretizar a equação via volumes finitos usando Rusanov/Euler
+- [x] Discretizar a equação via volumes finitos usando Rusanov/Euler e malha c
 - [x] Calcular as condições iniciais
 - [] Coletar os dados através das condições inicias
 - [] Obter a assimilação de dados de forma numérica como dado em 2.
-- [] Obter a assimilação de dados de forma analítica como proposto em minha tese
+- [] Validar a proposta dada em minha tese
+
+## CODE ISSUES ÁGUAS RASAS PLANO $f$
+- [] Discretizar a equação via volumes finitos usando malha c
+- [] Calcular as condições iniciais
+- [] Coletar os dados através das condições inicias
+- [] Obter a assimilação de dados de forma numérica como dado em 2.
+- [] Validar a proposta dada em minha tese
 
 
 ## BIBLIOGRAFIA BÁSICA
