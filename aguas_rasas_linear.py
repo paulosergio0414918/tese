@@ -768,33 +768,30 @@ class Assimilacao(SolucaoAguasRasas):
         """Calculo do gradiente descendente considerando n=it iterações"""
         def reconstruction_error(vet):
             return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
-
-        
+        from tqdm import tqdm
+        solucao_final_eta = np.zeros(self.dom.N) #chute inicial
+        solucao_final_u = np.zeros(self.dom.N) #chute inicial
         error = []
         custo = []
         if self.modo == "analitico":
-            solucao_final_eta = np.zeros(self.dom.N)
-            for _ in range(it):
+            for _ in tqdm(range(it)):
                 solucao_final_eta = solucao_final_eta - 0.1*self.grad_analitico(solucao_final_eta)    
                 error.append(reconstruction_error(solucao_final_eta))
-            return solucao_final_eta
-        else:
-        
-            solucao_final_eta = np.zeros(self.dom.N) #chute inicial
-            solucao_final_u = np.zeros(self.dom.N) #chute inicial
-            from tqdm import tqdm
+                custo.append(self.custo_assimilacao(solucao_final_eta))
+        else:            
             for _ in tqdm(range(it)):
                 grad = self.grad(cond_eta = solucao_final_eta, cond_u = solucao_final_u)
                 solucao_final_eta = solucao_final_eta - 0.1*grad["eta_grad"]
                 solucao_final_u = solucao_final_u - 0.1*grad["u_grad"]
                 error.append(reconstruction_error(solucao_final_eta))
                 custo.append(self.custo_assimilacao(solucao_final_eta))
-            return {
-                    'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
-                    'u_final': solucao_final_u, # u após it execuções do gradiente descendente con learning rate fixo
-                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
-                    'custo': custo # funcional custo de cada passo do gradiente descendente
-                }
+
+        return {
+                'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
+                'u_final': solucao_final_u, # u após it execuções do gradiente descendente con learning rate fixo
+                'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                'custo': custo # funcional custo de cada passo do gradiente descendente
+            }
 
 
 
@@ -806,12 +803,14 @@ if __name__ == "__main__":
     import numpy as np
 
     ###opção
-    op = 13
-    iteracoes = 2**7
+    op = 14
+    iteracoes = 2**5
 
     #### Variáveis
     amos = 2
     ruido = False
+    first_sample = 1 # paper uses first_sample = 0.2
+    Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
     #discretizacao = "godunov_euler"
     #discretizacao = "muscl_ssprk33"
     discretizacao = "malha_c"
@@ -828,8 +827,8 @@ if __name__ == "__main__":
     val = Validacao(dom, modo = discretizacao, testes = 6)
     ass = Assimilacao(dom, modo= modo, n_amostras = amos,
                        ruido=ruido,
-                       first_sample = 1, # paper uses first_sample = 0.2
-                       Delta_x =  1 ) # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
+                       first_sample = first_sample, 
+                       Delta_x =  Delta_x ) 
 
     if op == 20: #validação teorica
         ass10 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 ) 
@@ -868,17 +867,43 @@ if __name__ == "__main__":
         plt.scatter([i+1 for i in range(iteracoes)], result41, lw = 0.5, label = '5 amostras com ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], result50, lw = 0.5, label = '6 amostras sem ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], result51, lw = 0.5, label = '6 amostras com ruido' )
-        plt.title(f'Erro de reconstrução após {iteracoes} $\Delta x = $ {ass.Delta_x}.')
+        plt.title(f'Erro de reconstrução após {iteracoes} Delta x =  {ass.Delta_x}.')
+        plt.legend()
+        plt.show()
+
+
+    elif op == 14: # construir o gráfico do convergencia do custo
+        ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass5 = Assimilacao(dom, modo= modo, n_amostras = 5, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass6 = Assimilacao(dom, modo= modo, n_amostras = 6, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        erro2 = ass2.gradiente_descendente(it=iteracoes)['error']
+        erro3 = ass3.gradiente_descendente(it=iteracoes)['error']
+        erro4 = ass4.gradiente_descendente(it=iteracoes)['error']
+        erro5 = ass5.gradiente_descendente(it=iteracoes)['error']
+        erro6 = ass6.gradiente_descendente(it=iteracoes)['error']
+
+        
+        plt.ylabel('J^(n)/J^(0)')
+        plt.xlabel('Número de iterações')
+        plt.yscale('log')
+        plt.scatter([i+1 for i in range(iteracoes)], erro2/erro2[0] , lw = 0.5, label = '2 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro3/erro3[0] , lw = 0.5, label = '3 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro4/erro4[0] , lw = 0.5, label = '4 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro5/erro5[0] , lw = 0.5, label = '5 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro6/erro6[0] , lw = 0.5, label = '6 amostras sem ruido' )
+        plt.title(f'Convergencia do custo após {iteracoes} iterações considerando $Delta_x = $ {ass2.Delta_x}.')
         plt.legend()
         plt.show()
 
 
     elif op == 13: # construir o gráfico do erro de reconstrução da condição incial
-        ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
-        ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
-        ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
-        ass5 = Assimilacao(dom, modo= modo, n_amostras = 5, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
-        ass6 = Assimilacao(dom, modo= modo, n_amostras = 6, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
+        ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass5 = Assimilacao(dom, modo= modo, n_amostras = 5, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        ass6 = Assimilacao(dom, modo= modo, n_amostras = 6, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         erro2 = ass2.gradiente_descendente(it=iteracoes)['error']
         erro3 = ass3.gradiente_descendente(it=iteracoes)['error']
         erro4 = ass4.gradiente_descendente(it=iteracoes)['error']
@@ -894,7 +919,7 @@ if __name__ == "__main__":
         plt.scatter([i+1 for i in range(iteracoes)], erro4/erro4[0] , lw = 0.5, label = '4 amostras sem ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], erro5/erro5[0] , lw = 0.5, label = '5 amostras sem ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], erro6/erro6[0] , lw = 0.5, label = '6 amostras sem ruido' )
-        plt.title(f'Erro de reconstrução após {iteracoes} ietraçõe considerando $Delta_x = $ {ass2.Delta_x}.')
+        plt.title(f'Erro de reconstrução após {iteracoes} ietrações considerando $Delta_x = $ {ass2.Delta_x}.')
         plt.legend()
         plt.show()
 
@@ -920,12 +945,19 @@ if __name__ == "__main__":
         plt.scatter([i+1 for i in range(iteracoes)], custo4/custo4[0] , lw = 0.5, label = '4 amostras sem ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], custo5/custo5[0] , lw = 0.5, label = '5 amostras sem ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], custo6/custo6[0] , lw = 0.5, label = '6 amostras sem ruido' )
-        plt.title(f'Custo de assimilação após {iteracoes} $\Delta x = $ {ass2.Delta_x}.')
+        plt.title(f'Custo de assimilação após {iteracoes} Delta x =  {ass2.Delta_x}.')
         plt.legend()
         plt.show()
 
     elif op == 11: # teste gradiente numerico
-        result = ass.gradiente_descendente(it=iteracoes)
+        modo1 = "malha_c"
+        ass_local = Assimilacao(dom, modo= modo1, n_amostras = amos,
+                               ruido=ruido,
+                               first_sample = first_sample, 
+                               Delta_x =  Delta_x  )
+        result = ass_local.gradiente_descendente(it=iteracoes)
+        caso = ass_local.construtor_passos()
+        passos = caso['xj']
         grf = True
         #ploting the graph
         #plt.clf()
@@ -933,12 +965,14 @@ if __name__ == "__main__":
 
             plt.ylim(-0.025, 0.06) # y limit
             plt.xlim(-1.5, 1.5) # x limit
-            plt.plot(dom.x, result['eta_final'], label = rf'$\\phi^{{(f)}}(x)$ assimilada' )
-            plt.plot(dom.x, sol.eta_zero(dom.x), label = rf'$\\phi^{{(t)}}(x)$ realidade')
+            plt.plot(dom.x, result['eta_final'], label = 'phi^(f)(x) assimilada' )
+            plt.plot(dom.x, sol.eta_zero(dom.x), label = 'phi^(t)(x) realidade')
+            for px in passos:# destacar os pontos de amostragem
+                plt.plot([px, px], [-0.001, 0.001], color='red', linestyle='--', linewidth=1.5, alpha=0.7)
             if ruido:
-                plt.title(f'Execução de {iteracoes} iterações utilizando {amos} amostras com $\Delta x = $ {ass.Delta_x}. com ruido')
+                plt.title(f'Execução de {iteracoes} iterações utilizando {amos} amostras com Delta x =  {ass.Delta_x}. com ruido'  )
             else:
-                plt.title(f'Execução de {iteracoes} iterações utilizando {amos} amostras com $\Delta x = $ {ass.Delta_x}. sem ruido')
+                plt.title(f'Execução de {iteracoes} iterações utilizando {amos} amostras com Delta x =  {ass.Delta_x}. sem ruido')
             plt.legend()
             plt.pause(0.9)
             #plt.savefig('assimilacao.png')
@@ -948,25 +982,34 @@ if __name__ == "__main__":
             plt.xlabel('Número de iterações')
             #ax.set_xscale('log')
             plt.yscale('log')
-            plt.ylabel('fr"$|\\phi^{(t)}(x) - \\phi^{(n)}(x)|$"')
+            plt.ylabel('|phi^(t)(x) - phi^(n)(x)|')
             plt.scatter([i+1 for i in range(iteracoes)], result['error'], lw = 0.5, label = 'Erro em cada iteração' )
-            plt.title(fr'Execução de {iteracoes} iterações utilizando {amos} amostras com $\\Delta x = $ {ass.Delta_x}.')
+            plt.title(fr'Execução de {iteracoes} iterações utilizando {amos} amostras com Delta x =  {ass.Delta_x}.')
             plt.legend()
             #plt.savefig('custo_de_assimilacao.png')
             plt.show()
 
     elif op == 10: # teste gradiente analítico
-        
+        modo1 = "analitico"
+        ass_local = Assimilacao(dom, modo= modo1, n_amostras = amos,
+                               ruido=ruido,
+                               first_sample = first_sample, 
+                               Delta_x =  Delta_x  )
+        caso = ass_local.construtor_passos()
+        passos = caso['xj']
         for j in range(iteracoes):
             if math.log2(j+1).is_integer():
-                diff = np.linalg.norm(ass.gradiente_descendente(it=j)-sol.eta_zero(dom.x)) 
+                #diff = np.linalg.norm(ass.gradiente_descendente(it=j)-sol.eta_zero(dom.x)) 
                 #ploting the graph
                 plt.clf()
                 plt.ylim(-0.025, 0.06) # y limit
-                plt.xlim(-1.5, 1.5) # x limit
-                plt.plot(dom.x, ass.gradiente_descendente(it=j), label = rf'$\phi^{{(f)}}(x)$ assimilada' )
-                plt.plot(dom.x, sol.eta_zero(dom.x), label = f'$\phi^{{(t)}}(x)$ realidade' + f'\nDiff = : {diff:.2e}' )
-                plt.title(f'Execução {j+1} de {iteracoes} utilizando {amos} amostras com $\Delta x = $ {ass.Delta_x}.')
+                plt.xlim(-2.3, 2.3) # x limit
+                plt.plot(dom.x, ass_local.gradiente_descendente(it=j)['eta_final'], label = 'phi^(f)(x) assimilada' )
+                #plt.plot(dom.x, sol.eta_zero(dom.x), label = f'$\phi^{{(t)}}(x)$ realidade' f'\nDiff = : {diff:.2e}' )
+                plt.plot(dom.x, sol.eta_zero(dom.x), label = f'phi^(t)(x) realidade' )
+                for px in passos:# destacar os pontos de amostragem
+                    plt.plot([px, px], [-0.001, 0.001], color='red', linestyle='--', linewidth=1.5, alpha=0.7)
+                plt.title(f'Execução {j+1} de {iteracoes} utilizando {amos} amostras com Delta x =  {ass.Delta_x}.')
                 plt.legend()
                 plt.pause(0.9)
   
@@ -982,7 +1025,7 @@ if __name__ == "__main__":
 
             y = ass_local.gradiente_descendente(it=i)
             z = sol.eta_zero(dom.x)
-            graf = cdg.Grafico2d(dom.x, y1=y,y2=z, y1_name="assimilação", y2_name="realidade", title=f"{i} iterações")
+            graf = cdg.Grafico2d(dom.x, y1=y,y2=z, y1_name="assimilação", y2_name="realidade", title=f"{i} iterações",  fontsize=16)
             graf.plot2d()
             plt.clf()
 
@@ -1066,7 +1109,7 @@ if __name__ == "__main__":
             plt.xlim(dom.L0, dom.L) # x limit
             plt.plot(dom.x, y, label = 'Solução numérica ' )
             plt.plot(dom.x, z, label = 'Solução Analítica')
-            plt.title(f'Execução {i+1} de {iteracoes} do modelo {discretizacao} com cfl = {cfl}.')
+            plt.title(f'Execução {i+1} de {iteracoes} do modelo {discretizacao} com cfl = {cfl}.',  fontsize=16)
             plt.legend()
 
             #plt.show(block = False)
