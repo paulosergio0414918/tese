@@ -291,8 +291,6 @@ class Assimilacao(SolucaoAdveccao):
                 'xj': xj 
             }        
 
-
-
     def matriz_de_amostras(self):
         #if self._matriz_com_amostras is None:
         """Gera uma matriz contendo as amostras sem perturbação"""
@@ -551,6 +549,7 @@ if __name__ == "__main__":
     ruido = True
     iteracoes = 64
     amos = 2
+    save = False
 
 
     ###### objetos ##########
@@ -560,6 +559,8 @@ if __name__ == "__main__":
     val = Validacao()
     ass = Assimilacao(dom, modo="analitico", n_amostras = amos,
                       ruido=ruido)
+
+    ###### save_function ###############
     
     ##### lista de testes ##########
     if op == 23: #gráfico do resultado do professor

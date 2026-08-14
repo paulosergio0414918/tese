@@ -724,7 +724,13 @@ class Assimilacao(SolucaoAguasRasas):
                 'eta_grad' : eta_3,
                 'u_grad': u_3
             } 
-    
+
+    #TODO: Construir a função de otimização do gradiente descendente
+    #! 1º pesquisar mais sobre a constrante de Armijo = 10^-4
+    #! materei a constante c = 10^-4 e o fator de encolhimento em 0.5
+    #! 2º receber um candidato eta
+    #! 3° calcular o custo do candidato
+    #! 4º construir uma condicional dentro de um loop para garantir a consição de Armijo 
     def custo_assimilacao(self,
                           eta: np.ndarray = None,
                           ):
@@ -801,12 +807,19 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import construtor_de_graficos as cdg
     import numpy as np
+    import hashlib
+    import json
+    from pathlib import Path
 
     ###opção
     op = 14
-    iteracoes = 2**5
+    iteracoes = 2**3
 
     #### Variáveis
+    # N=1025; M = 513 #cfl = 0.5
+    # N=1024; M = 320 #cfl = 0.8
+    N=512;  M = 160 #cfl = 0.8
+    # N=1025; M=257   #cfl = 1
     amos = 2
     ruido = False
     first_sample = 1 # paper uses first_sample = 0.2
@@ -816,11 +829,13 @@ if __name__ == "__main__":
     discretizacao = "malha_c"
     modo = "malha_c"
     #modo = "analitico"
+    save = True
     
     ###objetos
+
     #dom = Dominio(N=1025, M = 513) #cfl = 0.5
     #dom = Dominio(N=1024, M = 320) #cfl = 0.8
-    dom = Dominio(N=512, M = 160) #cfl = 0.8
+    dom = Dominio(N = N, M = M) #cfl = 0.8
     #dom = Dominio(N=1025, M=257) #cfl = 1
     sol = SolucaoAguasRasas(dom)
     cfl = sol.calculo_cfl()
@@ -829,6 +844,39 @@ if __name__ == "__main__":
                        ruido=ruido,
                        first_sample = first_sample, 
                        Delta_x =  Delta_x ) 
+
+
+
+    def save_file():
+
+
+        params_dict = {
+                "model" : 'swe_l',
+                "M" : M,
+                "N" : N,
+                "it" : iteracoes,
+                "noise" : ruido,
+                "first_sample" : first_sample,
+                "Delta_x" :  Delta_x,
+                "discratization": discretizacao,
+                "grad": modo 
+            }
+        params_string = json.dumps(params_dict, sort_keys=True) # create an javascript string
+
+        hash_code = hashlib.md5(params_string.encode('utf-8')).hexdigest() # criate a name to the file
+
+        folder = Path("./data") # identify the folder
+
+        save_path = folder / f"{hash_code}.npz" 
+
+        np.savez_compressed(
+            save_path,
+            alphas=None,
+            trajetoria=None,
+            custo_final=None,
+
+        )
+
 
     if op == 20: #validação teorica
         ass10 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 ) 
@@ -871,8 +919,7 @@ if __name__ == "__main__":
         plt.legend()
         plt.show()
 
-
-    elif op == 14: # construir o gráfico do convergencia do custo
+    elif op == 14: # construir o gráfico do convergencia J^(n)/J^(0)do custo
         ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
@@ -885,6 +932,52 @@ if __name__ == "__main__":
         erro6 = ass6.gradiente_descendente(it=iteracoes)['error']
 
         
+
+        if save:
+            info = f"""
+            Foram armazendos os vetores custos de assimilação.
+            Parâmetros utilizados:
+                model : swe_l_op_14,
+                M : {M},
+                N : {N},
+                it : {iteracoes},
+                noise : {ruido},
+                first_sample : {first_sample},
+                Delta_x :  {Delta_x},
+                discratization: {discretizacao},
+                grad: {modo}
+            """
+
+            params_dict = {
+                "model" : 'swe_l_op_14',
+                "M" : M,
+                "N" : N,
+                "it" : iteracoes,
+                "noise" : ruido,
+                "first_sample" : first_sample,
+                "Delta_x" :  Delta_x,
+                "discretization": discretizacao,
+                "grad": modo 
+            }
+    
+            params_string = json.dumps(params_dict, sort_keys=True) # create an javascript string
+    
+            hash_code = hashlib.md5(params_string.encode('utf-8')).hexdigest() # criate a name to the file
+    
+            folder = Path("./data") # identify the folder
+    
+            save_path = folder / f"{hash_code}.npz" 
+    
+            np.savez_compressed(
+                save_path,
+                info = info,
+                erro2 = erro2,
+                erro3 = erro3,
+                erro4 = erro4,
+                erro5 = erro5,
+                erro6 = erro6                    
+            )
+            
         plt.ylabel('J^(n)/J^(0)')
         plt.xlabel('Número de iterações')
         plt.yscale('log')
@@ -893,7 +986,7 @@ if __name__ == "__main__":
         plt.scatter([i+1 for i in range(iteracoes)], erro4/erro4[0] , lw = 0.5, label = '4 amostras sem ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], erro5/erro5[0] , lw = 0.5, label = '5 amostras sem ruido' )
         plt.scatter([i+1 for i in range(iteracoes)], erro6/erro6[0] , lw = 0.5, label = '6 amostras sem ruido' )
-        plt.title(f'Convergencia do custo após {iteracoes} iterações considerando $Delta_x = $ {ass2.Delta_x}.')
+        plt.title(f'Convergencia do custo após {iteracoes} iterações considerando Δx =  {ass2.Delta_x}.')
         plt.legend()
         plt.show()
 
@@ -923,7 +1016,7 @@ if __name__ == "__main__":
         plt.legend()
         plt.show()
 
-    elif op == 12: # teste do custo de assimilação
+    elif op == 12: # teste do custo J^(n) de assimilação
         
         ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
         ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=False, first_sample = 0.2, Delta_x =  0.09 )
@@ -939,13 +1032,13 @@ if __name__ == "__main__":
         #plt.ylabel(fr"$|\\phi^t(x) - \\phi^n(x)|$")
         plt.xlabel('Número de iterações')
         plt.yscale('log')
-        plt.ylabel('J^(n)/J^(0)')
-        plt.scatter([i+1 for i in range(iteracoes)], custo2/custo2[0] , lw = 0.5, label = '2 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], custo3/custo3[0] , lw = 0.5, label = '3 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], custo4/custo4[0] , lw = 0.5, label = '4 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], custo5/custo5[0] , lw = 0.5, label = '5 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], custo6/custo6[0] , lw = 0.5, label = '6 amostras sem ruido' )
-        plt.title(f'Custo de assimilação após {iteracoes} Delta x =  {ass2.Delta_x}.')
+        plt.ylabel('J^(n)')
+        plt.scatter([i+1 for i in range(iteracoes)], custo2 , lw = 0.5, label = '2 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo3 , lw = 0.5, label = '3 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo4 , lw = 0.5, label = '4 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo5 , lw = 0.5, label = '5 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], custo6 , lw = 0.5, label = '6 amostras sem ruido' )
+        plt.title(f'Custo de assimilação após {iteracoes} Δx =  {ass2.Delta_x}.')
         plt.legend()
         plt.show()
 
@@ -1009,7 +1102,7 @@ if __name__ == "__main__":
                 plt.plot(dom.x, sol.eta_zero(dom.x), label = f'phi^(t)(x) realidade' )
                 for px in passos:# destacar os pontos de amostragem
                     plt.plot([px, px], [-0.001, 0.001], color='red', linestyle='--', linewidth=1.5, alpha=0.7)
-                plt.title(f'Execução {j+1} de {iteracoes} utilizando {amos} amostras com Delta x =  {ass.Delta_x}.')
+                plt.title(f'Execução {j+1} de {iteracoes} utilizando {amos} amostras com Δ x =  {ass.Delta_x}.')
                 plt.legend()
                 plt.pause(0.9)
   
@@ -1128,7 +1221,58 @@ if __name__ == "__main__":
         graf = cdg.Grafico2d(dom.x,y)
         graf.plot2d()
 
-    elif op == -1: #lixo 
+    elif op == -1: #crash course of .npz
+        #tutorial from https://www.youtube.com/watch?v=7uNSopXdAnc
+        
+        # create sample arrays
+        arr1 = np.array([1, 2, 3])
+        arr2 = np.array([4, 5, 6])
+
+        # save to uncompressed .npz file
+        np.savez('data/data2.npz', array1 = arr1, array2 = arr2)
+
+        #recovering the arrays
+        with np.load('data/data2.npz') as data:
+            a1 = data['array1']
+            a1 = data['array2']
+
+       
+
+        # View all array names in the archive
+        print('arrays in the archive', data.files)
+
+        #print(a1)
+
+        #converting the file to dictionary 
+        #the archive become manageable
+        with np.load('data/data2.npz') as data1:
+            dados_dict = dict(data1)
+
+        #editing one specific term
+        dados_dict['array1'][0] = -1
+        #print(dados_dict['array1'])
+
+        #add a new array
+        mat1 = np.ones((5,6))
+        dados_dict['mat3'] = mat1
+        
+        # replace an array completely
+        dados_dict['array2'] = np.array([1,1,1])
+
+        #print(dados_dict['mat3'])
+
+        #* deleting an array
+        #del dados_dict['array2']
+        
+        print
+
+        #! Always replace the archive with the new data
+        np.savez('data/data2.npz', **dados_dict)
+
+        with np.load('data/data2.npz') as data2:
+            print('file in final', data2.files)
+                         
+    elif op == -2: #lixo 
         '''
         ###################### versão 11/08/2026 ###########################
         ########################### op == 13  ##############################

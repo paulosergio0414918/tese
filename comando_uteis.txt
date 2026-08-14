@@ -35,9 +35,59 @@ ctrl + x -> delete a line completely
 ctrl + space -> show suggestions
 ctrl + / -> change line to comment
 
+**************************************************
+***********  .npz crash course  ******************
+**************************************************
 
+#tutorial from https://www.youtube.com/watch?v=7uNSopXdAnc
+        
+        # create sample arrays
+        arr1 = np.array([1, 2, 3])
+        arr2 = np.array([4, 5, 6])
 
+        # save to uncompressed .npz file
+        np.savez('data/data2.npz', array1 = arr1, array2 = arr2)
 
+        #recovering the arrays
+        with np.load('data/data2.npz') as data:
+            a1 = data['array1']
+            a1 = data['array2']
+
+       
+
+        # View all array names in the archive
+        print('arrays in the archive', data.files)
+
+        #print(a1)
+
+        #converting the file to dictionary 
+        #the archive become manageable
+        with np.load('data/data2.npz') as data1:
+            dados_dict = dict(data1)
+
+        #editing one specific term
+        dados_dict['array1'][0] = -1
+        #print(dados_dict['array1'])
+
+        #add a new array
+        mat1 = np.ones((5,6))
+        dados_dict['mat3'] = mat1
+        
+        # replace an array completely
+        dados_dict['array2'] = np.array([1,1,1])
+
+        #print(dados_dict['mat3'])
+
+        #* deleting an array
+        #del dados_dict['array2']
+        
+        print
+
+        #! Always replace the archive with the new data
+        np.savez('data/data2.npz', **dados_dict)
+
+        with np.load('data/data2.npz') as data2:
+            print('file in final', data2.files)
 
 **************************************************
 *******  Object-oriented programming  ************
