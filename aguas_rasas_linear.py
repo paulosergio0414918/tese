@@ -725,12 +725,6 @@ class Assimilacao(SolucaoAguasRasas):
                 'u_grad': u_3
             } 
 
-    #TODO: Construir a função de otimização do gradiente descendente
-    #! 1º pesquisar mais sobre a constrante de Armijo = 10^-4
-    #! materei a constante c = 10^-4 e o fator de encolhimento em 0.5
-    #! 2º receber um candidato eta
-    #! 3° calcular o custo do candidato
-    #! 4º construir uma condicional dentro de um loop para garantir a consição de Armijo 
     def custo_assimilacao(self,
                           eta: np.ndarray = None,
                           ):
@@ -799,8 +793,53 @@ class Assimilacao(SolucaoAguasRasas):
                 'custo': custo # funcional custo de cada passo do gradiente descendente
             }
 
+    def gradiente_descendente_otimizado(self,
+                                it:int = 10):
+            """Calculo do gradiente descendente considerando n=it iterações"""
+            def reconstruction_error(vet):
+                return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
+            from tqdm import tqdm
+            from scipy.optimize import line_search
+            solucao_final_eta = np.zeros(self.dom.N) #chute inicial
+            solucao_final_u = np.zeros(self.dom.N) #chute inicial
+            error = []
+            custo = []
+            alpha = []
+            if self.modo == "analitico":
+                for _ in tqdm(range(it)):
+                    grad = self.grad_analitico(solucao_final_eta)
+                    otimi = line_search(self.custo_assimilacao, self.grad_analitico, solucao_final_eta, -grad)
+                    solucao_final_eta = solucao_final_eta - otimi[0]*grad   
+                    error.append(reconstruction_error(solucao_final_eta))
+                    custo.append(self.custo_assimilacao(solucao_final_eta))
+                    alpha.append(otimi[0])
+            else:
+                
+                
+                for i in tqdm(range(it)):
+                    def grad_eta(eta): # função para retornar apenas o grad_eta utlizado na otimização
+                        return self.grad(cond_eta = eta, cond_u = solucao_final_u)['eta_grad']
+                    grad_eta_local = grad_eta(eta = solucao_final_eta) # gera a direção de decaimento
+                    grad_u = self.grad(cond_eta = solucao_final_eta, cond_u = solucao_final_u)['u_grad']         
+                    otimi = line_search(self.custo_assimilacao, grad_eta, solucao_final_eta, -grad_eta_local ) #gera a otimização do passo do gradiente descendente
+                    if otimi[0] is None: # garante que o gradiente irá funcionar mesmo se não houver otimização do passo do gradiente descendente
+                        alpha = 0.1
+                        print(f"Não houve otimização do passo na iteração {i}")
+                    else:
+                        alpha = otimi[0]
+                    solucao_final_eta = solucao_final_eta - alpha*grad_eta_local
+                    solucao_final_u = solucao_final_u - 0.1*grad_u
+                    error.append(reconstruction_error(solucao_final_eta))
+                    custo.append(self.custo_assimilacao(solucao_final_eta))
+                    alpha.append(alpha)
 
-
+            return {
+                    'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
+                    'u_final': solucao_final_u, # u após it execuções do gradiente descendente con learning rate fixo
+                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                    'custo': custo, # funcional custo de cada passo do gradiente descendente
+                    'alpha': alpha, # passo do gradiente descendente para ser aproveitado posteriormente
+                }
         
 if __name__ == "__main__":
     import dominio
@@ -813,7 +852,7 @@ if __name__ == "__main__":
 
     ###opção
     op = 14
-    iteracoes = 2**3
+    iteracoes = 2**8
 
     #### Variáveis
     # N=1025; M = 513 #cfl = 0.5
@@ -918,19 +957,38 @@ if __name__ == "__main__":
         plt.title(f'Erro de reconstrução após {iteracoes} Delta x =  {ass.Delta_x}.')
         plt.legend()
         plt.show()
+        
 
+    elif op == 15: #teste de otimizacao
+
+        erro_otimizado = ass.gradiente_descendente_otimizado(it=iteracoes)['error']
+        erro = ass.gradiente_descendente(it=iteracoes)['error']
+
+        plt.ylabel('J^(n)')
+        plt.xlabel('Número de iterações')
+        plt.yscale('log')
+        plt.scatter([i+1 for i in range(iteracoes)], erro_otimizado , lw = 0.5, label = 'erro otimizado' )
+        plt.scatter([i+1 for i in range(iteracoes)], erro , lw = 0.5, label = 'erro fixo' )
+        plt.title(f'Convergencia do custo após {iteracoes} iterações considerando Δx =  {ass.Delta_x}.')
+        plt.legend()
+        plt.show()
+        
     elif op == 14: # construir o gráfico do convergencia J^(n)/J^(0)do custo
         ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass3 = Assimilacao(dom, modo= modo, n_amostras = 3, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass5 = Assimilacao(dom, modo= modo, n_amostras = 5, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass6 = Assimilacao(dom, modo= modo, n_amostras = 6, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
-        erro2 = ass2.gradiente_descendente(it=iteracoes)['error']
-        erro3 = ass3.gradiente_descendente(it=iteracoes)['error']
-        erro4 = ass4.gradiente_descendente(it=iteracoes)['error']
-        erro5 = ass5.gradiente_descendente(it=iteracoes)['error']
-        erro6 = ass6.gradiente_descendente(it=iteracoes)['error']
-
+        gd2 = ass2.gradiente_descendente(it=iteracoes)
+        gd3 = ass3.gradiente_descendente(it=iteracoes)
+        gd4 = ass4.gradiente_descendente(it=iteracoes)
+        gd5 = ass5.gradiente_descendente(it=iteracoes)
+        gd6 = ass6.gradiente_descendente(it=iteracoes)
+        gd2_otimizado = ass2.gradiente_descendente_otimizado(it=iteracoes)
+        gd3_otimizado = ass3.gradiente_descendente_otimizado(it=iteracoes)
+        gd4_otimizado = ass4.gradiente_descendente_otimizado(it=iteracoes)
+        gd5_otimizado = ass5.gradiente_descendente_otimizado(it=iteracoes)
+        gd6_otimizado = ass6.gradiente_descendente_otimizado(it=iteracoes)
         
 
         if save:
@@ -971,14 +1029,20 @@ if __name__ == "__main__":
             np.savez_compressed(
                 save_path,
                 info = info,
-                erro2 = erro2,
-                erro3 = erro3,
-                erro4 = erro4,
-                erro5 = erro5,
-                erro6 = erro6                    
+                gd2 = gd2,
+                gd3 = gd3,
+                gd4 = gd4,
+                gd5 = gd5,
+                gd6 = gd6,
+                gd2_otimizado = gd2_otimizado,
+                gd3_otimizado = gd3_otimizado,
+                gd4_otimizado = gd4_otimizado,
+                gd5_otimizado = gd5_otimizado,
+                gd6_otimizado = gd6_otimizado,
+                
             )
             
-        plt.ylabel('J^(n)/J^(0)')
+        '''plt.ylabel('J^(n)/J^(0)')
         plt.xlabel('Número de iterações')
         plt.yscale('log')
         plt.scatter([i+1 for i in range(iteracoes)], erro2/erro2[0] , lw = 0.5, label = '2 amostras sem ruido' )
@@ -988,8 +1052,7 @@ if __name__ == "__main__":
         plt.scatter([i+1 for i in range(iteracoes)], erro6/erro6[0] , lw = 0.5, label = '6 amostras sem ruido' )
         plt.title(f'Convergencia do custo após {iteracoes} iterações considerando Δx =  {ass2.Delta_x}.')
         plt.legend()
-        plt.show()
-
+        plt.show()'''
 
     elif op == 13: # construir o gráfico do erro de reconstrução da condição incial
         ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
