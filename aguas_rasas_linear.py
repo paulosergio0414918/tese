@@ -27,16 +27,17 @@ class SolucaoAguasRasas:
         self.variacao_energia = 0
     
     def eta_zero(self, 
-                 x: np.ndarray = None) -> np.ndarray:
-        """Define a condição inicial para variável η"""
-        condicao = ci.Funcoes2d()
+                x: np.ndarray = None) -> np.ndarray:
+        """This method returns the initial condition for 
+        the variable η used to solve the forward equations."""
+        init_cond = ci.Funcoes2d()
         if x is None:
             x = self.dom.x
         if self.condicao == "condicao_caixa":
-            return condicao.condicao_caixa(x)
+            return init_cond.condicao_caixa(x)
         
         else:
-            return condicao.condicao_paper(x)
+            return init_cond.condicao_paper(x)
 
     def u_zero(self,
                x: np.ndarray = None) -> np.ndarray:
@@ -823,11 +824,11 @@ class Assimilacao(SolucaoAguasRasas):
                     grad_u = self.grad(cond_eta = solucao_final_eta, cond_u = solucao_final_u)['u_grad']         
                     otimi = line_search(self.custo_assimilacao, grad_eta, solucao_final_eta, -grad_eta_local ) #gera a otimização do passo do gradiente descendente
                     if otimi[0] is None: # garante que o gradiente irá funcionar mesmo se não houver otimização do passo do gradiente descendente
-                        alpha = 0.1
+                        alpha_i = 0.1
                         print(f"Não houve otimização do passo na iteração {i}")
                     else:
-                        alpha = otimi[0]
-                    solucao_final_eta = solucao_final_eta - alpha*grad_eta_local
+                        alpha_i = otimi[0]
+                    solucao_final_eta = solucao_final_eta - alpha_i*grad_eta_local
                     solucao_final_u = solucao_final_u - 0.1*grad_u
                     error.append(reconstruction_error(solucao_final_eta))
                     custo.append(self.custo_assimilacao(solucao_final_eta))
@@ -851,14 +852,14 @@ if __name__ == "__main__":
     from pathlib import Path
 
     ###opção
-    op = 14
-    iteracoes = 2**8
+    op = 2
+    iteracoes = 320
 
     #### Variáveis
     # N=1025; M = 513 #cfl = 0.5
-    # N=1024; M = 320 #cfl = 0.8
-    N=512;  M = 160 #cfl = 0.8
-    # N=1025; M=257   #cfl = 1
+    N=1024; M = 320 #cfl = 0.8
+    #N=512;  M = 160 #cfl = 0.8
+    #N=1025; M=257   #cfl = 1
     amos = 2
     ruido = False
     first_sample = 1 # paper uses first_sample = 0.2
@@ -916,7 +917,6 @@ if __name__ == "__main__":
 
         )
 
-
     if op == 20: #validação teorica
         ass10 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 ) 
         result10 = ass10.gradiente_descendente(it=iteracoes)['error']
@@ -958,7 +958,6 @@ if __name__ == "__main__":
         plt.legend()
         plt.show()
         
-
     elif op == 15: #teste de otimizacao
 
         erro_otimizado = ass.gradiente_descendente_otimizado(it=iteracoes)['error']
@@ -979,16 +978,16 @@ if __name__ == "__main__":
         ass4 = Assimilacao(dom, modo= modo, n_amostras = 4, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass5 = Assimilacao(dom, modo= modo, n_amostras = 5, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
         ass6 = Assimilacao(dom, modo= modo, n_amostras = 6, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
-        gd2 = ass2.gradiente_descendente(it=iteracoes)
-        gd3 = ass3.gradiente_descendente(it=iteracoes)
-        gd4 = ass4.gradiente_descendente(it=iteracoes)
-        gd5 = ass5.gradiente_descendente(it=iteracoes)
-        gd6 = ass6.gradiente_descendente(it=iteracoes)
         gd2_otimizado = ass2.gradiente_descendente_otimizado(it=iteracoes)
         gd3_otimizado = ass3.gradiente_descendente_otimizado(it=iteracoes)
         gd4_otimizado = ass4.gradiente_descendente_otimizado(it=iteracoes)
         gd5_otimizado = ass5.gradiente_descendente_otimizado(it=iteracoes)
         gd6_otimizado = ass6.gradiente_descendente_otimizado(it=iteracoes)
+        gd2 = ass2.gradiente_descendente(it=iteracoes)
+        gd3 = ass3.gradiente_descendente(it=iteracoes)
+        gd4 = ass4.gradiente_descendente(it=iteracoes)
+        gd5 = ass5.gradiente_descendente(it=iteracoes)
+        gd6 = ass6.gradiente_descendente(it=iteracoes)
         
 
         if save:
@@ -1029,30 +1028,63 @@ if __name__ == "__main__":
             np.savez_compressed(
                 save_path,
                 info = info,
-                gd2 = gd2,
-                gd3 = gd3,
-                gd4 = gd4,
-                gd5 = gd5,
-                gd6 = gd6,
-                gd2_otimizado = gd2_otimizado,
-                gd3_otimizado = gd3_otimizado,
-                gd4_otimizado = gd4_otimizado,
-                gd5_otimizado = gd5_otimizado,
-                gd6_otimizado = gd6_otimizado,
-                
+                gd2_erro = gd2['error'],
+                gd2_custo = gd2['custo'],
+                gd2_eta_final = gd2['eta_final'],
+                gd2_u_final = gd2['u_final'],
+                gd3_erro = gd3['error'],
+                gd3_custo = gd3['custo'],
+                gd3_eta_final = gd3['eta_final'],
+                gd3_u_final = gd3['u_final'],
+                gd4_erro = gd4['error'],
+                gd4_custo = gd4['custo'],
+                gd4_eta_final = gd4['eta_final'],
+                gd4_u_final = gd4['u_final'],
+                gd5_erro = gd5['error'],
+                gd5_custo = gd5['custo'],
+                gd5_eta_final = gd5['eta_final'],
+                gd5_u_final = gd5['u_final'],
+                gd6_erro = gd6['error'],
+                gd6_custo = gd6['custo'],
+                gd6_eta_final = gd6['eta_final'],
+                gd6_u_final = gd6['u_final'],
+                gd2_erro_otimizado = gd2_otimizado['error'],
+                gd2_custo_otimizado = gd2_otimizado['custo'],
+                gd2_alpha_otimizado = gd2_otimizado['alpha'],
+                gd2_eta_final_otimizado = gd2_otimizado['eta_final'],
+                gd2_u_final_otimizado = gd2_otimizado['u_final'],
+                gd3_erro_otimizado = gd3_otimizado['error'],
+                gd3_custo_otimizado = gd3_otimizado['custo'],
+                gd3_alpha_otimizado = gd3_otimizado['alpha'],
+                gd3_eta_final_otimizado = gd3_otimizado['eta_final'],
+                gd3_u_final_otimizado = gd3_otimizado['u_final'],
+                gd4_erro_otimizado = gd4_otimizado['error'],
+                gd4_custo_otimizado = gd4_otimizado['custo'],
+                gd4_alpha_otimizado = gd4_otimizado['alpha'],
+                gd4_eta_final_otimizado = gd4_otimizado['eta_final'],
+                gd4_u_final_otimizado = gd4_otimizado['u_final'],
+                gd5_erro_otimizado = gd5_otimizado['error'],
+                gd5_custo_otimizado = gd5_otimizado['custo'],
+                gd5_alpha_otimizado = gd5_otimizado['alpha'],
+                gd5_eta_final_otimizado = gd5_otimizado['eta_final'],
+                gd5_u_final_otimizado = gd5_otimizado['u_final'],
+                gd6_erro_otimizado = gd6_otimizado['error'],
+                gd6_custo_otimizado = gd6_otimizado['custo'],
+                gd6_alpha_otimizado = gd6_otimizado['alpha'],
+                gd6_eta_final_otimizado = gd6_otimizado['eta_final'],
+                gd6_u_final_otimizado = gd6_otimizado['u_final']
             )
             
-        '''plt.ylabel('J^(n)/J^(0)')
+        plt.ylabel('J^(n)/J^(0)')
         plt.xlabel('Número de iterações')
         plt.yscale('log')
-        plt.scatter([i+1 for i in range(iteracoes)], erro2/erro2[0] , lw = 0.5, label = '2 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], erro3/erro3[0] , lw = 0.5, label = '3 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], erro4/erro4[0] , lw = 0.5, label = '4 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], erro5/erro5[0] , lw = 0.5, label = '5 amostras sem ruido' )
-        plt.scatter([i+1 for i in range(iteracoes)], erro6/erro6[0] , lw = 0.5, label = '6 amostras sem ruido' )
+        plt.scatter([i+1 for i in range(iteracoes)], gd2_otimizado['custo'] , lw = 0.5, label = 'custo otimizado 2 amostras ' )
+        plt.scatter([i+1 for i in range(iteracoes)], gd6_otimizado['custo'] , lw = 0.5, label = 'custo otimizado 6 amostras ' )
+        plt.scatter([i+1 for i in range(iteracoes)], gd2['custo'] , lw = 0.5, label = 'custo não otimizado 4 amostras' )
+        plt.scatter([i+1 for i in range(iteracoes)], gd6['custo'] , lw = 0.5, label = 'custo não otimizado 5 amostras ' )
         plt.title(f'Convergencia do custo após {iteracoes} iterações considerando Δx =  {ass2.Delta_x}.')
         plt.legend()
-        plt.show()'''
+        plt.show()
 
     elif op == 13: # construir o gráfico do erro de reconstrução da condição incial
         ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )

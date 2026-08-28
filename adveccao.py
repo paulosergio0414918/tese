@@ -176,7 +176,7 @@ class Assimilacao(SolucaoAdveccao):
         self.dom = dom
         self.c = c
         self.condicao = condicao
-        self.passos = [int((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2) for i in range(self.n_amostras)]
+        #self.passos = [int((dom.M*(dom.T-(dom.T/self.n_amostras)*i))/2) for i in range(self.n_amostras)]
         self.ruido = ruido
         self.sol = SolucaoAdveccao(self.dom)
         self.modo = modo
@@ -545,7 +545,7 @@ if __name__ == "__main__":
     from rich import print
     from rich.table import Table
     ###### parâmetros #######
-    op = 20
+    op = 13
     ruido = True
     iteracoes = 64
     amos = 2
