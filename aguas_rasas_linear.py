@@ -658,7 +658,7 @@ class Assimilacao(SolucaoAguasRasas):
             for i in range(self.n_amostras): # loop para gerar os pontos amostrais
                 for j in range(self.dom.M): # loop para gerar toda a evolução temporal 
                     eta_forecast = sol.solucao_numerica(solucao_eta = eta, solucao_u = u, modo = "malha_c", tempo = j)["eta"] # E volui o problema direto tomando o chute inicial
-                    y_j =  sol.solucao_analitica_eta(tempo = j ) # obter as amostras atravez da solução analítica tomando a condição incial verdadeira
+                    y_j =  sol.solucao_analitica_eta(tempo = j ) # obter as amostras atravez da solução analítica tomando a condição inicial verdadeira
                     forcante[x_j[i],j] = eta_forecast[x_j[i]] - y_j[x_j[i]] # calcula a diferença necessária no termo forçante.
             
         return forcante
@@ -852,8 +852,8 @@ if __name__ == "__main__":
     from pathlib import Path
 
     ###opção
-    op = 2
-    iteracoes = 320
+    op = 15
+    iteracoes = 8
 
     #### Variáveis
     # N=1025; M = 513 #cfl = 0.5
@@ -862,7 +862,7 @@ if __name__ == "__main__":
     #N=1025; M=257   #cfl = 1
     amos = 2
     ruido = False
-    first_sample = 1 # paper uses first_sample = 0.2
+    first_sample = .2 # paper uses first_sample = 0.2
     Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
     #discretizacao = "godunov_euler"
     #discretizacao = "muscl_ssprk33"
@@ -963,7 +963,7 @@ if __name__ == "__main__":
         erro_otimizado = ass.gradiente_descendente_otimizado(it=iteracoes)['error']
         erro = ass.gradiente_descendente(it=iteracoes)['error']
 
-        plt.ylabel('J^(n)')
+        plt.ylabel('||ϕ^(t)-ϕ^(n)||/||ϕ^(t)||')
         plt.xlabel('Número de iterações')
         plt.yscale('log')
         plt.scatter([i+1 for i in range(iteracoes)], erro_otimizado , lw = 0.5, label = 'erro otimizado' )
@@ -1369,6 +1369,17 @@ if __name__ == "__main__":
                          
     elif op == -2: #lixo 
         '''
+
+            def matrix_sample_noise_constructor (self):
+        """Creates a matrix containing all sample data with noise."""
+   
+        sample_matrix_noise = self.sample_matrix.copy() 
+
+        sample_with_noise = sample_matrix_noise + self.noise_matrix
+        self.sample_matrix_noise = sample_with_noise
+        return sample_with_noi
+
+
         ###################### versão 11/08/2026 ###########################
         ########################### op == 13  ##############################
 
