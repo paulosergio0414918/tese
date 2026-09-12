@@ -6,19 +6,125 @@ import json
 from pathlib import Path
 import aguas_rasas_linear as swel
 import aguas_rasas_nao_linear as swenl
-import dominio
+from dominio import Dominio
 
-op = 14
+
+#opc = 'custo'
+opc = "all_solutions"
+#opc = "erro"
+
+otim = 'ot' # caso queira gradimente descendente otimizado
+#otim = no # caso queira gradiente descendente não otimizado
+
+###opção
+op = 18
 iteracoes = 2**3
 
 #### Variáveis
 # N=1025; M = 513 #cfl = 0.5
-# N=1024; M = 320 #cfl = 0.8
-N=512;  M = 160 #cfl = 0.8
+N=1024; M = 320 #cfl = 0.8
+#N=512;  M = 160 #cfl = 0.8
+#N=1025; M=257   #cfl = 1
+amos = 3
+ruido = False
+first_sample = .2 # paper uses first_sample = 0.2
+Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
+
+discretizacao = "malha_c"
+modo = "malha_c"
+#modo = "analitico"
+save = False
+
+dom = Dominio(N = N, M = M) #cfl = 0.8
+sol = swel.SolucaoAguasRasas(dom)
+
+def _tag(v): return f"{v:g}".replace("-", "m").replace(".", "p")
+
+def _load(n_obs,otim , opc, modo, fs, Dx, it):
+    return np.loadtxt(f"data/gd_n{n_obs}_{otim}_{opc}_{modo}_fs_{_tag(fs)}_deltax_{_tag(Dx)}_it_{it}.csv", delimiter=",")
+
+
+if opc == "custo":
+    fig, ax = plt.subplots()
+    x = np.arange(1, iteracoes + 1)
+    cores = {2: "black", 3: "blue", 4: "green", 5: "red", 6: "yellow"}
+    for n in (2, 3, 4, 5, 6):
+        c_ot = _load(n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
+        #c_no = _load(n, 'no', opc, modo, first_sample, Delta_x, iteracoes )
+        ax.scatter(x, c_ot/c_ot[0], s=8, color=cores[n], label=f"otimizado {n} amostras")
+        #ax.scatter(x, c_no / c_no[0], s=8, label=f"não otimizado {n} amostras")
+
+    ax.set_yscale("log")
+    ax.set_xlabel("Iteração")
+    ax.set_ylabel("J^(n) / J^(0)")
+    ax.set_title(f"Convergência do custo — Δx = {Delta_x}")
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+elif opc == "erro":
+    fig, ax = plt.subplots()
+    x = np.arange(1, iteracoes + 1)
+
+    for n in (2,3,4,5, 6):
+        c_ot = _load(n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
+        #c_no = _load(n, 'no', opc, modo, first_sample, Delta_x, iteracoes )
+        ax.scatter(x, c_ot, s=8, label=f"otimizado {n} amostras")
+        #ax.scatter(x, c_no, s=8, label=f"não otimizado {n} amostras")
+
+    ax.set_yscale("log")
+    ax.set_xlabel("Iteração")
+    ax.set_ylabel("||(phi^t(x) - phi^n(x))||/||phi^t(x)||")
+    ax.set_title(f"Erro de de reconstrução da condição inicial— Δx = {Delta_x}")
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+elif opc == "all_solutions":
+    all_sol2 = _load(amos, "ot", opc, "analitico", first_sample, Delta_x, iteracoes)
+    all_sol = _load(amos, "ot", opc, modo, first_sample, Delta_x, iteracoes)
+    m = all_sol.shape[1]
+    x= np.linspace(-4,4,m)
+    for j in range(iteracoes):
+        eta_j = all_sol[j, :]
+        eta2_j = all_sol2[j, :]
+
+        plt.clf()
+        plt.ylim(-0.025, 0.06)
+        plt.xlim(-2.3, 2.3)
+        plt.plot(x, sol.eta_zero(), label='φ^(t)')
+        plt.plot(x, eta2_j, label=f"φ^(n) analitico")
+        plt.plot(x, eta_j, label=f"φ^(n) {modo}")
+
+
+        plt.title(
+            f"Iteração {j+1}/{iteracoes } — "
+            f"n={amos}, Δx={Delta_x}, fs={first_sample}, modo={modo}"
+        )
+        plt.legend()
+        plt.pause(0.1)
+
+    plt.show()
+
+
+
+
+
+
+'''
+
+
+op = 14
+iteracoes = 8
+
+#### Variáveis
+# N=1025; M = 513 #cfl = 0.5
+N=1024; M = 320 #cfl = 0.8
+#N=512;  M = 160 #cfl = 0.8
 # N=1025; M=257   #cfl = 1
 amos = 2
 ruido = False
-first_sample = 1 # paper uses first_sample = 0.2
+first_sample = .2 # paper uses first_sample = 0.2
 Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
 #discretizacao = "godunov_euler"
 #discretizacao = "muscl_ssprk33"
@@ -32,7 +138,7 @@ save = True
 if op == 14:
 
     params_dict = {
-        "model" : 'swe_l_op_14',
+        "model" : 'swe_l_all',
         "M" : M,
         "N" : N,
         "it" : iteracoes,
@@ -46,18 +152,17 @@ if op == 14:
     params_string = json.dumps(params_dict, sort_keys=True) # create an javascript string
 
     hash_code = hashlib.md5(params_string.encode('utf-8')).hexdigest() # criate a name to the file
-
+    print(hash_code)
     folder = Path("./data") # identify the folder
 
     save_path = folder / f"{hash_code}.npz" 
 
     with np.load(save_path) as dados:
         info = dados['info'],
-        erro2 = dados['erro2'],
-        erro3 = dados['erro3'],
-        erro4 = dados['erro4'],
-        erro5 = dados['erro5'],
-        erro6 = dados['erro6']
+        gd2_erro = dados['error'],
+        gd2_custo = dados['custo'],
+        gd2_alpha = dados['alpha'],
+        gd2_all_solutions = dados['all_solutions'],
 
     print(info[0])
 
@@ -97,3 +202,4 @@ elif op == -1: #gráfico dos dois modelos
 
 
     plt.show()
+'''

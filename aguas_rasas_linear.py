@@ -5,7 +5,7 @@ from rich.traceback import install # to help debug
 from rich import print # create beautiful tables
 from rich.console import Console #to help on debug 
 from tqdm import tqdm # para show execute time 
-import random # generate noise in samples
+import random # generate noise in samples 
 import matplotlib.pyplot as plt # to create graphics 
 console = Console() # to enhance print() 
 install() # to help debug
@@ -56,8 +56,8 @@ class SolucaoAguasRasas:
         if tempo is None:
             tempo = self.dom.M   
 
-        return 0.5*(self.eta_zero(self.dom.x - (tempo+1)*self.dom.dt) \
-            + self.eta_zero(self.dom.x + (tempo+1)*self.dom.dt))
+        return 0.5*(self.eta_zero(self.dom.x - (tempo)*self.dom.dt) \
+            + self.eta_zero(self.dom.x + (tempo)*self.dom.dt))
     
     def solucao_analitica_u(self,
                           tempo: int = None
@@ -66,8 +66,8 @@ class SolucaoAguasRasas:
         if tempo is None:
             tempo = self.dom.M   
 
-        return 0.5*(self.eta_zero(self.dom.x - (tempo+1)*self.dom.dt) \
-            - self.eta_zero(self.dom.x + (tempo+1)*self.dom.dt))
+        return 0.5*(self.eta_zero(self.dom.x - (tempo)*self.dom.dt) \
+            - self.eta_zero(self.dom.x + (tempo)*self.dom.dt))
     
     def calculo_cfl(self):
 
@@ -292,12 +292,15 @@ class SolucaoAguasRasas:
 
         elif modo == "malha_c":
         
-            propagacao = self.malha_c(solucao_eta,solucao_u)
+            eta_final = solucao_eta
+            u_final = solucao_u
+
             
-            for _ in range(tempo+1):
+            for _ in range(tempo):
+                propagacao = self.malha_c(eta_final,u_final)
                 eta_final = propagacao['eta_final']
                 u_final = propagacao['u_final'] 
-                propagacao = self.malha_c(eta_final,u_final)
+                
 
         else:
             print("Modo não definido")
@@ -505,14 +508,12 @@ class Assimilacao(SolucaoAguasRasas):
         self.matriz_ruido = np.array([[random.gauss(0, self.standard_deviation) for _ in range(self.dom.M)] for _ in range(self.n_amostras)]) # matriz de ordem n_amostrasxM
         #print(f'tamanho da matrix {self.matriz_ruido.shape}')
         self.E = np.abs(np.mean(np.sum(self.matriz_ruido, axis=1)))
-
-        
-        self.matriz_de_amostras_ruido()
+        self.valida_passos()
+        self.matriz_de_amostras()
         self._print_passos_done = True
                 
-    def construtor_passos(self,
-                        print_info: bool = False):
-        
+    def valida_passos(self,
+                        print_info: bool = False):       
         #FIXME:
         #! Por algum motivo o construtor de passos retorna erro quando usamos delta_x = 0.1 
         #! Investigar após a reunião com o professor pedro
@@ -610,6 +611,14 @@ class Assimilacao(SolucaoAguasRasas):
             'passos' : passos,
             'xj': xj 
         }
+
+    def _passos_efetivos(self):
+        xj = np.array([self.first_sample + i*self.Delta_x for i in range(self.n_amostras)])
+        position = [int(np.where(np.isclose(self.dom.x, xj[i]))[0][0]) for i in range(self.n_amostras)]
+        return {'passos': position, 'xj': xj}
+
+    def construtor_passos(self, print_info=False):
+        return self._passos_efetivos()
     
     def matriz_de_amostras(self):
 
@@ -622,8 +631,8 @@ class Assimilacao(SolucaoAguasRasas):
 
         for i in range(self.n_amostras):
             for j in range(self.dom.M):
-                soluction = sol.solucao_analitica_eta(tempo=j)   
-                matriz[i, j] = soluction[steps[i]]
+                solution = self.sol.solucao_analitica_eta(tempo=j)   
+                matriz[i, j] = solution[steps[i]]
             
         self.matriz_com_amostras = matriz
         return matriz # retorna uma matriz de ordem n_amostrasxM
@@ -651,14 +660,14 @@ class Assimilacao(SolucaoAguasRasas):
         if self.ruido: 
             for i in range(self.n_amostras):
                 for j  in range(self.dom.M):
-                    eta_forecast = sol.solucao_numerica(solucao_eta = eta, solucao_u = u, modo = "malha_c", tempo = j)["eta"]
-                    y_j =  sol.solucao_analitica_eta(tempo = j )
+                    eta_forecast = self.sol.solucao_numerica(solucao_eta = eta, solucao_u = u, modo = "malha_c", tempo = j)["eta"]
+                    y_j =  self.sol.solucao_analitica_eta(tempo = j )
                     forcante[x_j[i],j] = eta_forecast[x_j[i]] - (y_j[x_j[i]] + self.matriz_ruido[i, j])
         else:
             for i in range(self.n_amostras): # loop para gerar os pontos amostrais
                 for j in range(self.dom.M): # loop para gerar toda a evolução temporal 
-                    eta_forecast = sol.solucao_numerica(solucao_eta = eta, solucao_u = u, modo = "malha_c", tempo = j)["eta"] # E volui o problema direto tomando o chute inicial
-                    y_j =  sol.solucao_analitica_eta(tempo = j ) # obter as amostras atravez da solução analítica tomando a condição inicial verdadeira
+                    eta_forecast = self.sol.solucao_numerica(solucao_eta = eta, solucao_u = u, modo = "malha_c", tempo = j)["eta"] # E volui o problema direto tomando o chute inicial
+                    y_j =  self.sol.solucao_analitica_eta(tempo = j ) # obter as amostras atravez da solução analítica tomando a condição inicial verdadeira
                     forcante[x_j[i],j] = eta_forecast[x_j[i]] - y_j[x_j[i]] # calcula a diferença necessária no termo forçante.
             
         return forcante
@@ -675,11 +684,11 @@ class Assimilacao(SolucaoAguasRasas):
             return vetor_deslocado
         
         eta_zero = self.sol.eta_zero()
-        soma = []
+        soma = np.zeros(self.dom.N)
         passos_local = self.construtor_passos()['passos']
         for  i in range(self.n_amostras):
             j = passos_local[i]
-            soma =+ composta(eta_zero, j)-composta(phi_n, j)
+            soma = soma  + composta(eta_zero, j)-composta(phi_n, j)
         grad = -(self.n_amostras/4)*(eta_zero-phi_n+(1/self.n_amostras)*soma)
 
         return grad
@@ -727,6 +736,69 @@ class Assimilacao(SolucaoAguasRasas):
             } 
 
     def custo_assimilacao(self,
+                        eta: np.ndarray = None,
+                        ):
+        """Retorna o custo de assimilação (Eq. funcional).
+
+        mathcal{J}[\phi] = (1/2) ∫_0^T Σ_j [ η^(f)(x_j,t) - y_j(t) ]² dt
+
+        Otimização: em vez de chamar solucao_numerica(tempo=i) para cada
+        i = 0, ..., M-1 — o que recompõe a trajetória inteira a cada i,
+        custo O(M²·N) — a trajetória η^(f)(x, t_k), k = 0, ..., M-1, é
+        construída em uma única varredura temporal usando malha_c passo a
+        passo. Custo passa a ser O(M·N).
+
+        Convenção temporal: o índice k corresponde a t_k = k·dt, de modo
+        que k=0 devolve a condição inicial η = φ (0 passos) e k=k devolve
+        o estado após k aplicações de malha_c. Essa convenção casa com
+        solucao_analitica_eta(tempo=k) = η(x, k·dt), que é a solução
+        usada para construir as amostras y_j em matriz_de_amostras.
+        """
+
+        # ---------- amostras observadas y_j (n_amostras × M) -------------
+        if self.ruido:
+            if self.matriz_com_amostras_ruido is None:
+                self.matriz_de_amostras_ruido()
+            y_j = self.matriz_com_amostras_ruido
+        else:
+            if self.matriz_com_amostras is None:
+                self.matriz_de_amostras()
+            y_j = self.matriz_com_amostras
+
+        # ---------- índices das posições x_j no vetor de estado ----------
+        steps = self.construtor_passos()['passos']
+
+        # ---------- trajetória do forecast, passo a passo ----------------
+        # eta_t[:, k] = η^(f)(x, t_k),  t_k = k·dt
+        eta_t = np.zeros((self.dom.N, self.dom.M))
+        e = eta.copy()
+        u = np.zeros(self.dom.N)
+        eta_t[:, 0] = e                      # k = 0: estado inicial
+        for k in range(1, self.dom.M):
+            out = self.malha_c(e, u)
+            e, u = out['eta_final'], out['u_final']
+            eta_t[:, k] = e
+        # -----------------------------------------------------------------
+
+        # ---------- diferenças quadradas somadas nas amostras ------------
+        # eta_t[steps, :] tem shape (n_amostras, M)
+        eta_obs = eta_t[steps, :]
+        diff = (eta_obs - y_j) ** 2          # (n_amostras, M)
+        sum_diff = np.sum(diff, axis=0)      # (M,)
+
+        # ---------- integração no tempo (regra do trapézio) --------------
+        '''s = 0
+        n = len(sum_diff)
+        for i in range(1, n - 1):
+            s += sum_diff[i]
+        integral = (sum_diff[0] + 2 * s + sum_diff[-1]) * self.dom.dt / 2'''
+
+        #return 0.5 * integral
+        diff2 = (eta_obs - y_j)
+        sum_diff2 = np.sum(diff2, axis=0)
+        return np.dot(sum_diff2, sum_diff2)#!<------ mudança aqui
+
+    def old_custo_assimilacao(self,
                           eta: np.ndarray = None,
                           ):
         """Retorna o custo de assimilação para cada iteração."""
@@ -740,7 +812,7 @@ class Assimilacao(SolucaoAguasRasas):
             y_j = self.matriz_com_amostras
         
         for i in range(self.dom.M): # loop para construir a diferença presente no custo
-            eta_f = self.solucao_numerica(solucao_eta=eta, solucao_u=np.zeros(self.dom.N), tempo=i)['eta'] # constroi o eta^f dada a condicao tomando u = 0
+            eta_f = self.sol.solucao_numerica(solucao_eta=eta, solucao_u=np.zeros(self.dom.N), tempo=i)['eta'] # constroi o eta^f dada a condicao tomando u = 0
             # Atualiza solução
             for j in range(self.n_amostras):
                 diff[j,i] = (eta_f[steps[j]] - y_j[j,i])**2
@@ -760,7 +832,7 @@ class Assimilacao(SolucaoAguasRasas):
         diferenca = []
         for i in range(iter):
             #diferenca.append(np.abs(np.mean((self.sol.u_zero(dom.x)-self.gradiente_descendente(it = i)))))
-            diferenca.append(float(np.linalg.norm(self.sol.u_zero(self.dom.x)-self.gradiente_descendente(it = i)['eta_final'])/np.linalg.norm(self.sol.u_zero(self.dom.x))))
+            diferenca.append(float(np.linalg.norm(self.sol.eta_zero(self.dom.x)-self.gradiente_descendente(it = i)['eta_final'])/np.linalg.norm(self.sol.eta_zero(self.dom.x))))
 
         return diferenca
 
@@ -770,39 +842,66 @@ class Assimilacao(SolucaoAguasRasas):
         def reconstruction_error(vet):
             return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
         from tqdm import tqdm
+        '''def graphic(v,j):
+            plt.clf()
+            plt.ylim(-0.025, 0.06) # y limit
+            plt.xlim(-2.3, 2.3) # x limit
+            plt.plot(self.dom.x, v, label = 'phi^(f)(x) assimilada' )
+            #plt.plot(dom.x, sol.eta_zero(dom.x), label = f'$phi^{{(t)}}(x)$ realidade' f'\nDiff = : {diff:.2e}' )
+            plt.plot(self.dom.x, self.sol.eta_zero(self.dom.x), label = 'phi^(t)(x) realidade' )
+            plt.title(f'Execução {j+1} utilizando {self.n_amostras} amostras com Δ x =  {self.Delta_x}.')
+            plt.legend()
+            plt.pause(0.9)'''
         solucao_final_eta = np.zeros(self.dom.N) #chute inicial
         solucao_final_u = np.zeros(self.dom.N) #chute inicial
         error = []
         custo = []
+        all_solutions_eta = np.zeros((self.dom.N, it))
         if self.modo == "analitico":
-            for _ in tqdm(range(it)):
+            for i in tqdm(range(it)):
                 solucao_final_eta = solucao_final_eta - 0.1*self.grad_analitico(solucao_final_eta)    
                 error.append(reconstruction_error(solucao_final_eta))
                 custo.append(self.custo_assimilacao(solucao_final_eta))
+                all_solutions_eta[:, i] = solucao_final_eta
         else:            
-            for _ in tqdm(range(it)):
+            for i in tqdm(range(it)):
                 grad = self.grad(cond_eta = solucao_final_eta, cond_u = solucao_final_u)
                 solucao_final_eta = solucao_final_eta - 0.1*grad["eta_grad"]
                 solucao_final_u = solucao_final_u - 0.1*grad["u_grad"]
                 error.append(reconstruction_error(solucao_final_eta))
                 custo.append(self.custo_assimilacao(solucao_final_eta))
+                all_solutions_eta[:, i] = solucao_final_eta
+                #graphic(solucao_final_eta,i) #!<---------- construção do gráfico
 
         return {
                 'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
                 'u_final': solucao_final_u, # u após it execuções do gradiente descendente con learning rate fixo
                 'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
-                'custo': custo # funcional custo de cada passo do gradiente descendente
+                'custo': custo, # funcional custo de cada passo do gradiente descendente
+                'all_solutions': all_solutions_eta, # todas as soluções eta produzidas pelo gradiente descendente 
             }
+    
 
-    def gradiente_descendente_otimizado(self,
+    def old_gradiente_descendente_otimizado(self,
                                 it:int = 10):
             """Calculo do gradiente descendente considerando n=it iterações"""
             def reconstruction_error(vet):
                 return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
             from tqdm import tqdm
             from scipy.optimize import line_search
+            '''def graphic(v,j):
+                plt.clf()
+                plt.ylim(-0.025, 0.06) # y limit
+                plt.xlim(-2.3, 2.3) # x limit
+                plt.plot(self.dom.x, v, label = 'phi^(f)(x) assimilada' )
+                #plt.plot(dom.x, sol.eta_zero(dom.x), label = '$phi^{{(t)}}(x)$ realidade' f'\nDiff = : {diff:.2e}' )
+                plt.plot(self.dom.x, self.sol.eta_zero(self.dom.x), label = 'phi^(t)(x) realidade' )
+                plt.title(f'Execução {j+1} utilizando {self.n_amostras} amostras com Δ x =  {self.Delta_x}.')
+                plt.legend()
+                plt.pause(0.9)'''
             solucao_final_eta = np.zeros(self.dom.N) #chute inicial
             solucao_final_u = np.zeros(self.dom.N) #chute inicial
+            all_solutions_eta = np.zeros((self.dom.N,it))
             error = []
             custo = []
             alpha = []
@@ -832,7 +931,9 @@ class Assimilacao(SolucaoAguasRasas):
                     solucao_final_u = solucao_final_u - 0.1*grad_u
                     error.append(reconstruction_error(solucao_final_eta))
                     custo.append(self.custo_assimilacao(solucao_final_eta))
-                    alpha.append(alpha)
+                    alpha.append(alpha_i)
+                    all_solutions_eta[:,i] = solucao_final_eta
+                    #graphic(solucao_final_eta,i)
 
             return {
                     'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
@@ -840,9 +941,71 @@ class Assimilacao(SolucaoAguasRasas):
                     'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
                     'custo': custo, # funcional custo de cada passo do gradiente descendente
                     'alpha': alpha, # passo do gradiente descendente para ser aproveitado posteriormente
+                    'all_solutions': all_solutions_eta #todas as soluções do eta
                 }
-        
+
+    def gradiente_descendente_otimizado(self, it: int = 10):
+        """Gradiente descendente com passo otimizado por line search (Wolfe)."""
+        from tqdm import tqdm
+        from scipy.optimize import line_search
+
+        def reconstruction_error(vet):
+            return (np.linalg.norm(vet - self.sol.eta_zero())
+                    / np.linalg.norm(self.sol.eta_zero()))
+
+        solucao_final_eta = np.zeros(self.dom.N)
+        u_fixo = np.zeros(self.dom.N)                # u(x,0) = 0 é dado, não incógnita
+        all_solutions_eta = np.zeros((self.dom.N, it))
+        error, custo, alpha = [], [], []
+
+        if self.modo == "analitico":
+            for i in tqdm(range(it)):
+                grad = self.grad_analitico(solucao_final_eta)
+                otimi = line_search(self.custo_assimilacao,
+                                    self.grad_analitico,
+                                    solucao_final_eta,
+                                    -grad)
+                alpha_i = 0.1 if otimi[0] is None else otimi[0]
+                solucao_final_eta = solucao_final_eta - alpha_i * grad
+                error.append(reconstruction_error(solucao_final_eta))
+                custo.append(self.custo_assimilacao(solucao_final_eta))
+                alpha.append(alpha_i)
+                all_solutions_eta[:, i] = solucao_final_eta
+        else:
+            # gradiente de J w.r.t. eta, com u FIXO em u_fixo (consistente com o custo)
+            def grad_eta(eta):
+                return self.grad(cond_eta=eta, cond_u=u_fixo)['eta_grad']
+
+            for i in tqdm(range(it)):
+                grad_eta_local = grad_eta(solucao_final_eta)
+                otimi = line_search(self.custo_assimilacao,
+                                    grad_eta,
+                                    solucao_final_eta,
+                                    -grad_eta_local)
+                if otimi[0] is None:
+                    alpha_i = 0.1
+                    print(f"Não houve otimização do passo na iteração {i}")
+                else:
+                    alpha_i = otimi[0]
+                solucao_final_eta = solucao_final_eta - alpha_i * grad_eta_local
+                error.append(reconstruction_error(solucao_final_eta))
+                custo.append(self.custo_assimilacao(solucao_final_eta))
+                alpha.append(alpha_i)
+                all_solutions_eta[:, i] = solucao_final_eta
+
+        return {
+            'eta_final': solucao_final_eta,
+            'u_final':   u_fixo,
+            'error':     error,
+            'custo':     custo,
+            'alpha':     alpha,
+            'all_solutions': all_solutions_eta,
+        } 
+
+
+
 if __name__ == "__main__":
+    import textwrap
     import dominio
     import matplotlib.pyplot as plt
     import construtor_de_graficos as cdg
@@ -852,8 +1015,8 @@ if __name__ == "__main__":
     from pathlib import Path
 
     ###opção
-    op = 15
-    iteracoes = 8
+    op = 18
+    iteracoes = 2**3
 
     #### Variáveis
     # N=1025; M = 513 #cfl = 0.5
@@ -867,9 +1030,9 @@ if __name__ == "__main__":
     #discretizacao = "godunov_euler"
     #discretizacao = "muscl_ssprk33"
     discretizacao = "malha_c"
-    modo = "malha_c"
-    #modo = "analitico"
-    save = True
+    #modo = "malha_c"
+    modo = "analitico"
+    save = False
     
     ###objetos
 
@@ -885,37 +1048,8 @@ if __name__ == "__main__":
                        first_sample = first_sample, 
                        Delta_x =  Delta_x ) 
 
+    def _tag(v): return f"{v:g}".replace("-", "m").replace(".", "p")
 
-
-    def save_file():
-
-
-        params_dict = {
-                "model" : 'swe_l',
-                "M" : M,
-                "N" : N,
-                "it" : iteracoes,
-                "noise" : ruido,
-                "first_sample" : first_sample,
-                "Delta_x" :  Delta_x,
-                "discratization": discretizacao,
-                "grad": modo 
-            }
-        params_string = json.dumps(params_dict, sort_keys=True) # create an javascript string
-
-        hash_code = hashlib.md5(params_string.encode('utf-8')).hexdigest() # criate a name to the file
-
-        folder = Path("./data") # identify the folder
-
-        save_path = folder / f"{hash_code}.npz" 
-
-        np.savez_compressed(
-            save_path,
-            alphas=None,
-            trajetoria=None,
-            custo_final=None,
-
-        )
 
     if op == 20: #validação teorica
         ass10 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=False, first_sample = 0.2, Delta_x =  0.09 ) 
@@ -957,7 +1091,89 @@ if __name__ == "__main__":
         plt.title(f'Erro de reconstrução após {iteracoes} Delta x =  {ass.Delta_x}.')
         plt.legend()
         plt.show()
+
+
+    elif op == 18: #salva todos os dados constrído
+        resultados = {}
+        for n_amostras in (2, 3, 4, 5, 6):
+            ass_i = Assimilacao(dom, modo=modo, n_amostras=n_amostras,
+                                ruido=ruido, first_sample=first_sample,
+                                Delta_x=Delta_x)
+
+            gd_ot = ass_i.gradiente_descendente_otimizado(it=iteracoes)
+            gd_no = ass_i.gradiente_descendente(it=iteracoes)
+
+            resultados[(n_amostras, "ot")] = gd_ot
+            resultados[(n_amostras, "no")] = gd_no
+
+            # grava já, antes de ir para a próxima amostra
+            tag = f"n{n_amostras}"
+            np.savetxt(f"data/gd_n{n_amostras}_ot_custo_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", np.array(gd_ot['custo']),  delimiter=",")
+            np.savetxt(f"data/gd_n{n_amostras}_ot_erro_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv",  np.array(gd_ot['error']),  delimiter=",")
+            np.savetxt(f"data/gd_n{n_amostras}_ot_alpha_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", np.array(gd_ot['alpha']),  delimiter=",")
+            np.savetxt(f"data/gd_n{n_amostras}_no_custo_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", np.array(gd_no['custo']),  delimiter=",")
+            np.savetxt(f"data/gd_n{n_amostras}_no_erro_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv",  np.array(gd_no['error']),  delimiter=",")
+            # opcional: matrizes 2D
+            np.savetxt(f"data/gd_n{n_amostras}_ot_all_solutions_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_ot['all_solutions'].T, delimiter=",")
+            np.savetxt(f"data/gd_n{n_amostras}_ot_all_solutions_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_no['all_solutions'].T, delimiter=",")
+            print(f"[ok] n={n_amostras} salvo.")
+
+    elif op == 17: #teste rápido de salvamento
+        #import os, psutil
+        ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
+        gd2_otimizado = ass2.gradiente_descendente_otimizado(it=iteracoes)
+
+        #processo = psutil.Process(os.getpid())
+        #print(f"RAM usada pelo Python: {processo.memory_info().rss / 1e6:.1f} MB")
+        info = f"""
+        Foram armazendos os vetores custos de assimilação.
+        Parâmetros utilizados:
+            model : swe_l,
+            M : {M},
+            N : {N},
+            it : {iteracoes},
+            noise : {ruido},
+            first_sample : {first_sample},
+            Delta_x :  {Delta_x},
+            discratization: {discretizacao},
+            grad: {modo}
+        """
         
+        params_dict = {
+            "model" : 'swe_l_all',
+            "M" : M,
+            "N" : N,
+            "it" : iteracoes,
+            "noise" : ruido,
+            "first_sample" : first_sample,
+            "Delta_x" :  Delta_x,
+            "discretization": discretizacao,
+            "grad": modo 
+        }
+
+        params_string = json.dumps(params_dict, sort_keys=True) # create an javascript string
+
+        hash_code = hashlib.md5(params_string.encode('utf-8')).hexdigest() # criate a name to the file
+
+        folder = Path("./data") # identify the folder
+
+        save_path = folder / f"{hash_code}.npz" 
+
+        np.savez(
+            save_path,
+            info = info,
+            gd2_erro = gd2_otimizado['error'],
+            gd2_custo = gd2_otimizado['custo'],
+            gd2_alpha = gd2_otimizado['alpha'],
+            gd2_all_solutions = gd2_otimizado['all_solutions'],
+        )
+
+        print("Fim do processo!")
+       
+    elif op == 16: #teste mais rápido do gradiente analítico
+
+        ass.gradiente_descendente_otimizado(it=iteracoes)
+       
     elif op == 15: #teste de otimizacao
 
         erro_otimizado = ass.gradiente_descendente_otimizado(it=iteracoes)['error']
@@ -988,7 +1204,10 @@ if __name__ == "__main__":
         gd4 = ass4.gradiente_descendente(it=iteracoes)
         gd5 = ass5.gradiente_descendente(it=iteracoes)
         gd6 = ass6.gradiente_descendente(it=iteracoes)
-        
+        vet2o = gd2_otimizado['custo'] 
+        vet6o = gd6_otimizado['custo']
+        vet2 = gd2['custo']
+        vet6 = gd6['custo']
 
         if save:
             info = f"""
@@ -1078,13 +1297,16 @@ if __name__ == "__main__":
         plt.ylabel('J^(n)/J^(0)')
         plt.xlabel('Número de iterações')
         plt.yscale('log')
-        plt.scatter([i+1 for i in range(iteracoes)], gd2_otimizado['custo'] , lw = 0.5, label = 'custo otimizado 2 amostras ' )
-        plt.scatter([i+1 for i in range(iteracoes)], gd6_otimizado['custo'] , lw = 0.5, label = 'custo otimizado 6 amostras ' )
-        plt.scatter([i+1 for i in range(iteracoes)], gd2['custo'] , lw = 0.5, label = 'custo não otimizado 4 amostras' )
-        plt.scatter([i+1 for i in range(iteracoes)], gd6['custo'] , lw = 0.5, label = 'custo não otimizado 5 amostras ' )
-        plt.title(f'Convergencia do custo após {iteracoes} iterações considerando Δx =  {ass2.Delta_x}.')
+        plt.scatter([i+1 for i in range(iteracoes)], vet2o/vet2o[0] , lw = 0.5, label = 'custo otimizado 2 amostras ' )
+        plt.scatter([i+1 for i in range(iteracoes)], vet6o/vet6o[0] , lw = 0.5, label = 'custo otimizado 6 amostras ' )
+        plt.scatter([i+1 for i in range(iteracoes)], vet2/vet2[0] , lw = 0.5, label = 'custo não otimizado 2 amostras' )
+        plt.scatter([i+1 for i in range(iteracoes)], vet6/vet6[0] , lw = 0.5, label = 'custo não otimizado 6 amostras ' )
+        plt.title(f'Convergencia do reconstruç após {iteracoes} iterações considerando Δx =  {ass2.Delta_x}.')
         plt.legend()
         plt.show()
+
+
+        resultados = {}
 
     elif op == 13: # construir o gráfico do erro de reconstrução da condição incial
         ass2 = Assimilacao(dom, modo= modo, n_amostras = 2, ruido=ruido, first_sample = first_sample, Delta_x =  Delta_x )
@@ -1162,6 +1384,29 @@ if __name__ == "__main__":
             else:
                 plt.title(f'Execução de {iteracoes} iterações utilizando {amos} amostras com Delta x =  {ass.Delta_x}. sem ruido')
             plt.legend()
+            texto = (
+            "Este gráfico mostra a comparação entre a solução assimilada (linha contínua) "
+            f"e a realidade (linha tracejada) para a equação SWE linear considerando {iteracoes}"
+            f"iterações do gradiente descendente. Neste experimento consideramos {amos} pontos"
+            f"amostrais sendo o primeiro cituado em x_o = {first_sample} e igualmente espaçados " 
+            f"com Δx = {Delta_x} O numero de amostras para este experimento é  Os traços verticais "
+            "vermelhos indicam os pontos de amostragem utilizados pelo método de assimilação. "
+            )
+
+            # Quebra o texto em linhas de até ~90 caracteres
+            texto_formatado = "\n".join(textwrap.wrap(texto, width=90))
+
+            # Abre espaço embaixo para o texto caber (0.30 = 30% da figura reservada)
+            plt.subplots_adjust(bottom=0.30)
+
+            # Insere o texto na margem inferior, usando coordenadas da FIGURA
+            plt.figtext(
+                0.5, 0.02,                 # x=centro, y=2% acima da base da figura
+                texto_formatado,
+                ha='center', va='bottom',
+                fontsize=9, style='italic', color='dimgray',
+                wrap=True
+                )
             plt.pause(0.9)
             #plt.savefig('assimilacao.png')
             plt.show()
@@ -1178,7 +1423,7 @@ if __name__ == "__main__":
             plt.show()
 
     elif op == 10: # teste gradiente analítico
-        modo1 = "analitico"
+        modo1 = "analitico" # or  "analitico" or "malha_c"
         ass_local = Assimilacao(dom, modo= modo1, n_amostras = amos,
                                ruido=ruido,
                                first_sample = first_sample, 
@@ -1186,21 +1431,44 @@ if __name__ == "__main__":
         caso = ass_local.construtor_passos()
         passos = caso['xj']
         for j in range(iteracoes):
-            if math.log2(j+1).is_integer():
-                #diff = np.linalg.norm(ass.gradiente_descendente(it=j)-sol.eta_zero(dom.x)) 
-                #ploting the graph
-                plt.clf()
-                plt.ylim(-0.025, 0.06) # y limit
-                plt.xlim(-2.3, 2.3) # x limit
-                plt.plot(dom.x, ass_local.gradiente_descendente(it=j)['eta_final'], label = 'phi^(f)(x) assimilada' )
-                #plt.plot(dom.x, sol.eta_zero(dom.x), label = f'$\phi^{{(t)}}(x)$ realidade' f'\nDiff = : {diff:.2e}' )
-                plt.plot(dom.x, sol.eta_zero(dom.x), label = f'phi^(t)(x) realidade' )
-                for px in passos:# destacar os pontos de amostragem
-                    plt.plot([px, px], [-0.001, 0.001], color='red', linestyle='--', linewidth=1.5, alpha=0.7)
-                plt.title(f'Execução {j+1} de {iteracoes} utilizando {amos} amostras com Δ x =  {ass.Delta_x}.')
-                plt.legend()
-                plt.pause(0.9)
-  
+        #if math.log2(j+1).is_integer():
+            #diff = np.linalg.norm(ass.gradiente_descendente(it=j)-sol.eta_zero(dom.x)) 
+            #ploting the graph
+            plt.clf()
+            plt.ylim(-0.025, 0.06) # y limit
+            plt.xlim(-2.3, 2.3) # x limit
+            plt.plot(dom.x, ass_local.gradiente_descendente(it=j)['eta_final'], label = 'phi^(f)(x) assimilada' )
+            #plt.plot(dom.x, sol.eta_zero(dom.x), label = f'$\phi^{{(t)}}(x)$ realidade' f'\nDiff = : {diff:.2e}' )
+            plt.plot(dom.x, sol.eta_zero(dom.x), label = f'phi^(t)(x) realidade' )
+            for px in passos:# destacar os pontos de amostragem
+                plt.plot([px, px], [-0.001, 0.001], color='red', linestyle='--', linewidth=1.5, alpha=0.7)
+            plt.title(f'Execução {j+1} de {iteracoes} utilizando {amos} amostras com Δ x =  {ass.Delta_x}.')
+            plt.legend()
+            texto = (
+            "Este gráfico mostra a comparação entre a solução assimilada (linha contínua) "
+            f"e a realidade (linha tracejada) para a equação SWE linear considerando {iteracoes}"
+            f"iterações do gradiente descendente. Neste experimento consideramos {amos} pontos"
+            f"amostrais sendo o primeiro cituado em x_o = {first_sample} e igualmente espaçados " 
+            f"com Δx = {Delta_x} O numero de amostras para este experimento é  Os traços verticais "
+            "vermelhos indicam os pontos de amostragem utilizados pelo método de assimilação. "
+            )
+
+            # Quebra o texto em linhas de até ~90 caracteres
+            texto_formatado = "\n".join(textwrap.wrap(texto, width=90))
+
+            # Abre espaço embaixo para o texto caber (0.30 = 30% da figura reservada)
+            plt.subplots_adjust(bottom=0.30)
+
+            # Insere o texto na margem inferior, usando coordenadas da FIGURA
+            plt.figtext(
+                0.5, 0.02,                 # x=centro, y=2% acima da base da figura
+                texto_formatado,
+                ha='center', va='bottom',
+                fontsize=9, style='italic', color='dimgray',
+                wrap=True
+                )
+            plt.pause(0.9)
+    
         plt.show()
     
     elif op == 9: #teste gradiente step by step

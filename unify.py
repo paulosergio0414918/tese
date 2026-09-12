@@ -18,15 +18,18 @@ from domain import Domain as domain       # all domain parameters
 class ForwardSolution:
     ############## constructor #########################
     def __init__(self,
-                dom: domain, # package including time and space discretization 
+                dom: domain = None, # package including time and space discretization 
                 condition: str = "paper_condition",
                 equation: str = "advection"
                 ):
-    
         self.dom = dom
         self.condition = condition
         self.equation = equation
+        if (self.dom is None) and (self.equation == "advection"):
+            self.dom = Domain(N = 1024, M = 256)
 
+        elif (self.dom is None) and ((self.equation == "linear_SWE") or (self.equation == "nonlinear_SWE")):
+            self.dom = Domain(N = 1024, M = 320)
 
     ################ initial condition for the water displacement ##########################
     def eta_zero(self, 
@@ -111,7 +114,6 @@ class ForwardSolution:
             return {
                     'eta' : solution,
                     }
-
 
         elif self.equation == "linear_SWE":
             def c_grid(
@@ -240,7 +242,7 @@ class ForwardSolution:
 class BackwardSolution:
 
     def __init__(self,
-                 dom: domain, # um domínio criado pela classe Dominio
+                 dom: domain, 
                  n_samples: int = 2,
                  standard_deviation: float = 0.0005,
                  condition: str = "paper_condition",
@@ -367,7 +369,32 @@ class BackwardSolution:
                 'xj': xj 
             }
 
+    #! I'll do some changes in matrix_sample_constructor
+
     def matrix_sample_constructor(self):
+        matrix = np.zeros((self.dom.N, self.dom.M))
+
+        steps = self.steps_constructor()['steps']
+
+
+        for j in range(self.dom.M):
+            solution = sol.numeric_solution(iter = j)['eta']   
+            for i in range(self.n_samples):
+                matrix[steps[i], j] = solution[steps[i]]
+
+        if self.noise:
+            sample_with_noise = np.zeros((self.dom.N, self.dom.M))           
+            for i in range(self.n_samples):
+                sample_with_noise[steps[i]] = matrix[steps[i],:] + self.noise_matrix[i,:]
+            self.sample_matrix = sample_with_noise
+            return  sample_with_noise 
+        else:
+            self.sample_matrix  = matrix
+            return matrix 
+
+
+
+    def old_matrix_sample_constructor(self):
 
         """Creates a matrix containing all sample data."""
         
@@ -396,90 +423,123 @@ class BackwardSolution:
         x_j = self.steps_constructor()["steps"]
         y_j = self.sample_matrix
         rhs = np.zeros((self.dom.N, self.dom.M))  #right-hand side
-        for i in range(self.n_samples):
-            for j  in range(self.dom.M):
-                eta_forecast = self.sol.numeric_solution(initial_eta = eta, initial_u = u, time = j)["eta"]
-                rhs[x_j[i],j] = eta_forecast[x_j[i]] - y_j[i,j]
+        for j  in range(self.dom.M):
+            eta_forecast = self.sol.numeric_solution(initial_eta = eta, initial_u = u, iter = j)["eta"]
+            for i in range(self.n_samples):
+                rhs[x_j[i],j] = eta_forecast[x_j[i]] - y_j[x_j[i],j]
     
-
+        
         return rhs    
-
-
 
     def grad(self,
                 cond_eta: np.ndarray = None,
                 cond_u: np.ndarray = None
                 ):
-        #NOTE: I think it's okay.
+        #* I think it's okay.
+        if self.equation == "advection":
+            eta_zero_star = np.zeros(self.dom.N)
+            source = self.source_term(cond_eta)
+            kappa = self.dom.dt/self.dom.dx
+            for i in reversed(range(self.dom.M-1)):
+                k = i+1
+                grad = 0.5*(np.roll(eta_zero_star,-1)*(1+kappa) - (np.roll(eta_zero_star,1)*(1-kappa))) + kappa*source[:,k]
 
-        source = self.source_term(u = cond_u, eta = cond_eta )
-        #print(f'Ordem da forçante = {fonte.shape}')
-        u_zero_star = np.zeros(self.dom.N)
-        eta_zero_star = np.zeros(self.dom.N)
+                eta_zero_star = grad
 
-        def diff_u(vet):
-            return (np.roll(vet,1) - vet)/self.dom.dx
+            return {
+                    'eta_grad' : eta_zero_star
+                } 
 
-        def diff_eta(vet):
-                    return (vet - np.roll(vet,-1))/self.dom.dx
 
-        #here we have a reverse system, so $\tilde{\delta_t} = \delta_t$.
-        for i in reversed(range(self.dom.M-1)):
-            k = i+1
-            #first stage of ssprk33  
-            eta_1 = eta_zero_star - self.dom.dt*(diff_u(u_zero_star)-(1/self.dom.dx) * source[:,k])
-            u_1 = u_zero_star- self.dom.dt*diff_eta(eta_zero_star)
+        elif self.equation == "linear_SWE":
+            source = self.source_term(u = cond_u, eta = cond_eta )
+            u_zero_star = np.zeros(self.dom.N)
+            eta_zero_star = np.zeros(self.dom.N)
 
-            #second stage of ssprk33
-            eta_2 = 0.75*eta_zero_star + 0.25*eta_1 - 0.25*self.dom.dt*(diff_u(u_1)-(1/self.dom.dx) * source[:,k-1])
-            u_2 = 0.75*u_zero_star + 0.25*u_1 - 0.25*self.dom.dt*diff_eta(eta_1)
+            def diff_u(vet):
+                return (np.roll(vet,1) - vet)/self.dom.dx
 
-            #second stage of ssprk33
-            eta_3 = (1/3)*eta_zero_star +(2/3)*eta_2 - (2/3)*self.dom.dt*(diff_u(u_2)-(1/self.dom.dx) * source[:,k-1])
-            u_3 = (1/3)*u_zero_star +(2/3)*u_2 - (2/3)*self.dom.dt*diff_eta(eta_2)
+            def diff_eta(vet):
+                        return (vet - np.roll(vet,-1))/self.dom.dx
 
-            eta_zero_star = eta_3
-            u_zero_star = u_3
+            #here we have a reverse system, so $\tilde{\delta_t} = \delta_t$.
+            for i in reversed(range(self.dom.M-1)):
+                k = i+1
+                #first stage of ssprk33  
+                eta_1 = eta_zero_star - self.dom.dt*(diff_u(u_zero_star)-(1/self.dom.dx) * source[:,k])
+                u_1 = u_zero_star- self.dom.dt*diff_eta(eta_zero_star)
 
-        
+                #second stage of ssprk33
+                eta_2 = 0.75*eta_zero_star + 0.25*eta_1 - 0.25*self.dom.dt*(diff_u(u_1)-(1/self.dom.dx) * source[:,k-1])
+                u_2 = 0.75*u_zero_star + 0.25*u_1 - 0.25*self.dom.dt*diff_eta(eta_1)
 
-        return {
-                'eta_grad' : eta_3,
-                'u_grad': u_3
-            } 
-    #TODO: Esse código não está otimizando e pior não está convergindo.
+                #second stage of ssprk33
+                eta_3 = (1/3)*eta_zero_star +(2/3)*eta_2 - (2/3)*self.dom.dt*(diff_u(u_2)-(1/self.dom.dx) * source[:,k-1])
+                u_3 = (1/3)*u_zero_star +(2/3)*u_2 - (2/3)*self.dom.dt*diff_eta(eta_2)
 
-    
-    def gradient_descendent(self,
+                eta_zero_star = eta_3
+                u_zero_star = u_3
+
+            
+
+            return {
+                    'eta_grad' : eta_zero_star ,
+                    'u_grad': u_zero_star
+                } 
+
+    def reconstruction_error(self,vet):
+        return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
+  
+    def gradient_descent(self,
                               it:int = 10):
         """Calculo do gradiente descendente considerando n=it iterações"""
-        def reconstruction_error(vet):
-            return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
+
         from tqdm import tqdm
         final_solution_eta = np.zeros(self.dom.N) # initial eta
         final_solution_u = np.zeros(self.dom.N) # initial u
         error = []
         cost = []
-         
-        for _ in tqdm(range(it)):
-            grad = self.grad(cond_eta = final_solution_eta, cond_u = final_solution_u)
-            final_solution_eta = final_solution_eta - 0.1*grad["eta_grad"]
-            final_solution_u = final_solution_u - 0.1*grad["u_grad"]
-            error.append(reconstruction_error(final_solution_eta))
-            cost.append(self.assimilation_cost(final_solution_eta))
 
-        return {
-                'eta_final' : final_solution_eta, # eta após it execuções do gradiente descendente con learning rate fixo
-                'u_final': final_solution_u, # u após it execuções do gradiente descendente con learning rate fixo
-                'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
-                'cost': cost # funcional custo de cada passo do gradiente descendente
-            }
+        if self.equation == "advection":
+            for _ in tqdm(range(it)):
+                grad_eta_local = self.grad(cond_eta = final_solution_eta)['eta_grad']
+                final_solution_eta = final_solution_eta - 0.1*grad_eta_local
+                error.append(self.reconstruction_error(final_solution_eta))
+                cost.append(self.assimilation_cost(final_solution_eta))
 
-    def optimized_gradient_descendent(self,
+            return {
+                    'eta_final' : final_solution_eta, # eta após it execuções do gradiente descendente con learning rate fixo
+                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                    'cost': cost, # funcional cost de cada passo do gradiente descendente
+                }
+        elif self.equation == "linear_SWE":
+
+            for _ in tqdm(range(it)):
+                grad = self.grad(cond_eta = final_solution_eta, cond_u = final_solution_u)
+                final_solution_eta = final_solution_eta - 0.1*grad["eta_grad"]
+                final_solution_u = final_solution_u - 0.1*grad["u_grad"]
+                error.append(self.reconstruction_error(final_solution_eta))
+                cost.append(self.assimilation_cost(final_solution_eta))
+
+            return {
+                    'eta_final' : final_solution_eta, # eta após it execuções do gradiente descendente con learning rate fixo
+                    'u_final': final_solution_u, # u após it execuções do gradiente descendente con learning rate fixo
+                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                    'cost': cost # funcional custo de cada passo do gradiente descendente
+                }
+    #FIXME: The optimized  gradient descent  does notwork.
+    #! For some reason this method does not converge. 
+    #! eu estou atualizando o eta?
+    def optimized_gradient_descent(self,
                                 it:int = 10):
         """Calculo do gradiente descendente considerando n=it iterações"""
+
         def reconstruction_error(vet):
             return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
+
+        def grad_eta(eta): 
+            return self.grad(cond_eta = eta, cond_u = final_solution_u)['eta_grad']
+
         from tqdm import tqdm
         from scipy.optimize import line_search
         final_solution_eta = np.zeros(self.dom.N) #initial eta
@@ -487,58 +547,85 @@ class BackwardSolution:
         error = []
         cost = []
         alpha = []
-            
-        for i in tqdm(range(it)):
-            def grad_eta(eta): # função para retornar apenas o grad_eta utlizado na otimização
-                return self.grad(cond_eta = eta, cond_u = final_solution_u)['eta_grad']
-            grad_eta_local = grad_eta(eta = final_solution_eta) # gera a direção de decaimento
-            grad_u = self.grad(cond_eta = final_solution_eta, cond_u = final_solution_u)['u_grad']         
-            optim = line_search(self.assimilation_cost, grad_eta, final_solution_eta, -grad_eta_local ) #gera a otimização do passo do gradiente descendente
-            if optim[0] is None: # garante que o gradiente irá funcionar mesmo se não houver otimização do passo do gradiente descendente
-                alpha_i = 0.1
-                print(f"Não houve otimização do passo na iteração {i}")
-            else:
-                alpha_i = optim[0]
-            final_solution_eta = final_solution_eta - alpha_i*grad_eta_local
-            final_solution_u = final_solution_u - 0.1*grad_u
-            error.append(reconstruction_error(final_solution_eta))
-            cost.append(self.assimilation_cost(final_solution_eta))
-            alpha.append(alpha)
+           
+    
+        if self.equation == "advection":
+            for i in tqdm(range(it)):
+                grad_eta_local = self.grad(cond_eta = final_solution_eta)['eta_grad']
+                optim = line_search(self.assimilation_cost, grad_eta, final_solution_eta, -grad_eta_local ) 
+                if optim[0] is None:
+                    alpha_i = 0.1
+                    print(f"Não houve otimização do passo na iteração {i}")
+                else:
+                    alpha_i = optim[0]
 
-        return {
-                'eta_final' : final_solution_eta, # eta após it execuções do gradiente descendente con learning rate fixo
-                'u_final': final_solution_u, # u após it execuções do gradiente descendente con learning rate fixo
-                'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
-                'cost': cost, # funcional cost de cada passo do gradiente descendente
-                'alpha': alpha, # passo do gradiente descendente para ser aproveitado posteriormente
-            }
+                final_solution_eta = final_solution_eta - alpha_i*grad_eta_local
+                error.append(reconstruction_error(final_solution_eta))
+                cost.append(self.assimilation_cost(final_solution_eta))
+                alpha.append(alpha)
+
+            return {
+                    'eta_final' : final_solution_eta, # eta após it execuções do gradiente descendente con learning rate fixo
+                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                    'cost': cost, # funcional cost de cada passo do gradiente descendente
+                    'alpha': alpha, # passo do gradiente descendente para ser aproveitado posteriormente
+                }
+
+
+        elif self.equation == "linear_SWE":
+            for i in tqdm(range(it)):
+
+                grad_eta_local = grad_eta(eta = final_solution_eta) 
+                grad_u = self.grad(cond_eta = final_solution_eta, cond_u = final_solution_u)['u_grad']         
+                optim = line_search(self.assimilation_cost, grad_eta, final_solution_eta, -grad_eta_local ) 
+                if optim[0] is None:
+                    alpha_i = 0.1
+                    print(f"Não houve otimização do passo na iteração {i}")
+                else:
+                    alpha_i = optim[0]
+                final_solution_eta = final_solution_eta - alpha_i*grad_eta_local
+                final_solution_u = final_solution_u - 0.1*grad_u
+                error.append(reconstruction_error(final_solution_eta))
+                cost.append(self.assimilation_cost(final_solution_eta))
+                alpha.append(alpha)
+
+            return {
+                    'eta_final' : final_solution_eta, # eta após it execuções do gradiente descendente con learning rate fixo
+                    'u_final': final_solution_u, # u após it execuções do gradiente descendente con learning rate fixo
+                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                    'cost': cost, # funcional cost de cada passo do gradiente descendente
+                    'alpha': alpha, # passo do gradiente descendente para ser aproveitado posteriormente
+                }
+
+
 
 
     def assimilation_cost(self,
                               eta: np.ndarray = None,
                               ):
-            """Retorna o custo de assimilação para cada iteração."""
-            steps = self.steps_constructor()['steps'] #gera o indice onde estão as amostras no vetor de assiilação
-            diff= np.zeros((self.n_samples, self.dom.M))# vai receber as diferenças internas do custo
-            y_j = self.sample_matrix
-    
-            for i in range(self.dom.M): # loop para construir a diferença presente no custo
-                eta_f = self.sol.numeric_solution(initial_eta=eta, initial_u=np.zeros(self.dom.N), time=i)['eta'] # constroi o eta^f dada a condicao tomando u = 0
-                # Atualiza solução
-                for j in range(self.n_samples):
-                    diff[j,i] = (eta_f[steps[j]] - y_j[j,i])**2
-            sum_diff = np.sum(diff, axis=0) # Returns a vector of size self.M containing the sum over all n_samples columns.
-    
-            def trapezoidal_rule(x): # integral using trapezoidal rule
-                s=0
-                n = len(x)
-                for i in range(1,n-1,1):
-                    s += x[i]
-                return (x[0] + 2*s + x[-1])*self.dom.dt/2
-    
-            return 0.5 * trapezoidal_rule(sum_diff ) #Returns the numerical integral 
-    
-    
+        """Retorna o custo de assimilação para cada iteração."""
+        steps = self.steps_constructor()['steps'] #gera o indice onde estão as amostras no vetor de assiilação
+        diff= np.zeros((self.n_samples, self.dom.M))# vai receber as diferenças internas do custo
+        y_j = self.sample_matrix
+        eta_forecast = np.zeros((self.dom.N, self.dom.M))
+        for i in range(self.dom.M): # loop para construir a diferença presente no custo
+            eta_f = self.sol.numeric_solution(initial_eta=eta, initial_u=np.zeros(self.dom.N), iter=i)['eta'] # constroi o eta^f dada a condicao tomando u = 0
+            eta_forecast[:,i] = eta_f
+            # Atualiza solução
+        for j in range(self.n_samples):
+            diff[j,:] = (eta_forecast[steps[j],:] - y_j[steps[j],:])**2
+        sum_diff = np.sum(diff, axis=0) # Returns a vector of size self.M containing the sum over all n_samples columns.
+
+        def trapezoidal_rule(x): # integral using trapezoidal rule
+            s=0
+            n = len(x)
+            for i in range(1,n-1,1):
+                s += x[i]
+            return (x[0] + 2*s + x[-1])*self.dom.dt/2
+
+        return 0.5 * trapezoidal_rule(sum_diff ) #Returns the numerical integral 
+
+
 
 
 
@@ -546,6 +633,7 @@ class BackwardSolution:
 
 if __name__ == "__main__":
     from domain import Domain
+    import textwrap
     import matplotlib.pyplot as plt
     import numpy as np
     import hashlib
@@ -559,16 +647,16 @@ if __name__ == "__main__":
 
     #### Variables of the problem
 
-    # N=1025; M = 513 #cfl = 0.5
-    N=1024; M = 320 #cfl = 0.8 # Recommended for swe
+    #N=1025; M = 513 #cfl = 0.5
+    #N=1024; M = 320 #cfl = 0.8 # Recommended for swe
     #N=512;  M = 160 #cfl = 0.8
-    # N=1024; M=256   #cfl = 1 # Recommended for advection
+    N=1024; M=256   #cfl = 1 # Recommended for advection
     
     amos = 2
     noise = False
     first_sample = 0.2 # paper uses first_sample = 0.2
     Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
-
+    equation = "linear_SWE" # or  "advection" or "nonlinear_SWE" or "linear_SWE" 
 
     dom = Domain(N = N, M = M)
     sol = ForwardSolution(dom = dom, 
@@ -579,7 +667,8 @@ if __name__ == "__main__":
                         n_samples = amos,
                        noise = noise,
                        first_sample = first_sample, 
-                       Delta_x =  Delta_x
+                       Delta_x =  Delta_x,
+                       equation = equation
                          ) 
 
     if op == 20: # Reproducing the paper's figure 3 
@@ -604,16 +693,17 @@ the significant difference between the two solutions""")
     elif op == 9: #assimilation graphic
         ass_local = BackwardSolution(dom = dom, n_samples = amos,
                                noise = noise,
-                               first_sample = first_sample, 
+                               first_sample = first_sample,
+                               equation =  equation,
                                Delta_x =  Delta_x  )
-        result = ass_local.optimized_gradient_descendent(it=iterations)
+        result = ass_local.gradient_descent(it=iterations)
         caso = ass_local.steps_constructor()
         steps = caso['xj']
 
         plt.ylim(-0.025, 0.06) # y limit
         plt.xlim(-1.5, 1.5) # x limit
-        plt.plot(dom.x, result['eta_final'], label = 'phi^(f)(x) assimilada' )
-        plt.plot(dom.x, sol.eta_zero(dom.x), label = 'phi^(t)(x) realidade')
+        plt.plot(dom.x, result['eta_final'], color = "black", linestyle='-', label = 'phi^(f)(x) assimilada' )
+        plt.plot(dom.x, sol.eta_zero(dom.x), color = "black", linestyle='--', label = 'phi^(t)(x) realidade')
         for px in steps:# destacar os pontos de amostragem
             plt.plot([px, px], [-0.001, 0.001], color='red', linestyle='--', linewidth=1.5, alpha=0.7)
         if noise:
@@ -621,7 +711,29 @@ the significant difference between the two solutions""")
         else:
             plt.title(f'Execução de {iterations} iterações utilizando {amos} amostras com Delta x =  {ass_local.Delta_x}. sem ruido')
         plt.legend()
-        plt.pause(0.9)
+        texto = (
+            "Este gráfico mostra a comparação entre a solução assimilada (linha contínua) "
+            f"e a realidade (linha tracejada) para a equação {equation} considerando {iterations}"
+            f"iterações do gradiente descendente. Neste experimento consideramos {amos} pontos"
+            f"amostrais sendo o primeiro cituado em x_o = {first_sample} e igualmente espaçados " 
+            f"com Δx = {Delta_x} O numero de amostras para este experimento é  Os traços verticais "
+            "vermelhos indicam os pontos de amostragem utilizados pelo método de assimilação. "
+        )
+
+        # Quebra o texto em linhas de até ~90 caracteres
+        texto_formatado = "\n".join(textwrap.wrap(texto, width=90))
+
+        # Abre espaço embaixo para o texto caber (0.30 = 30% da figura reservada)
+        plt.subplots_adjust(bottom=0.30)
+
+        # Insere o texto na margem inferior, usando coordenadas da FIGURA
+        plt.figtext(
+            0.5, 0.02,                 # x=centro, y=2% acima da base da figura
+            texto_formatado,
+            ha='center', va='bottom',
+            fontsize=9, style='italic', color='dimgray',
+            wrap=True
+            )
         #plt.savefig('assimilacao.png')iteracoes
         plt.show()
 
@@ -707,4 +819,23 @@ the significant difference between the two solutions""")
         plt.plot(dom.x, y)
         plt.show()
 
-    
+    elif op == 0:
+        dom_local = Domain(N = N, M = M)
+
+        assimilation_local = BackwardSolution(dom = dom_local,
+                        n_samples = amos,
+                        noise = noise,
+                        first_sample = first_sample, 
+                        equation = "advection",
+                        Delta_x =  Delta_x
+        )
+
+        samples = assimilation_local.matrix_sample_constructor()
+        #source = assimilation_local.source_term(eta = np.ones(N))
+        print(assimilation_local.steps_constructor()['steps'])
+        print(samples.shape)
+        np.savetxt('minha_matriz.csv', samples, delimiter=',', fmt='%.10f')
+        '''x = np.linspace(-4,4,N)
+        y =  assimilation_local.grad()['eta_grad']
+        plt.plot(x,y)
+        plt.show()'''
