@@ -13,6 +13,46 @@ install() # to help debug
 import condicoes_iniciais as ci
 from dominio import Dominio
 
+# topo de aguas_rasas_linear.py, após os imports
+
+def _worker_assimilacao(args):
+    import dominio as _dom_mod
+    import traceback
+    n_amostras, N, M, modo, ruido, first_sample, Delta_x, iteracoes = args
+    try:
+        dom_w = _dom_mod.Dominio(N=N, M=M)
+        ass_w = Assimilacao(dom_w, modo=modo, n_amostras=n_amostras,
+                            ruido=ruido, first_sample=first_sample,
+                            Delta_x=Delta_x)
+        passos = ass_w.construtor_passos()['passos']
+        xj = ass_w.construtor_passos()['xj']
+        print(f"[start] n={n_amostras} modo={modo} "
+              f"fs={ass_w.first_sample:.4f} dx={ass_w.Delta_x:.4f} "
+              f"passos={passos} xj={xj}")
+
+        gd_ot = ass_w.gradiente_descendente_otimizado(it=iteracoes)
+        gd_no = ass_w.gradiente_descendente(it=iteracoes)
+        print(f"[done]  n={n_amostras} modo={modo} "
+              f"err_ot[0]={gd_ot['error'][0]:.3e} err_ot[-1]={gd_ot['error'][-1]:.3e}")
+        return {'n': n_amostras, 'modo': modo, 'ot': gd_ot, 'no': gd_no}
+    except Exception as e:
+        print(f"[FAIL] n={n_amostras} modo={modo}: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        raise
+
+def _old_worker_assimilacao(args):
+    """Roda um valor de n_amostras (otimizado + não otimizado) num processo próprio."""
+    import dominio as _dom_mod
+    n_amostras, N, M, modo, ruido, first_sample, Delta_x, iteracoes = args
+
+    dom_w = _dom_mod.Dominio(N=N, M=M)
+    ass_w = Assimilacao(dom_w, modo=modo, n_amostras=n_amostras,
+                        ruido=ruido, first_sample=first_sample,
+                        Delta_x=Delta_x)
+
+    gd_ot = ass_w.gradiente_descendente_otimizado(it=iteracoes)
+    gd_no = ass_w.gradiente_descendente(it=iteracoes)
+    return {'n': n_amostras, 'modo': modo, 'ot': gd_ot, 'no': gd_no}
 
 class SolucaoAguasRasas:
     """ Solucao analitica e numerica da equação de águas rasas."""
@@ -647,7 +687,26 @@ class Assimilacao(SolucaoAguasRasas):
         self.matriz_com_amostras_ruido = amostras_com_ruido
         return amostras_com_ruido # retorna uma matriz de ordem n_amostrasxM
 
-    def forcante(self,
+    def forcante(self, u=None, eta=None):
+        steps = self.construtor_passos()['passos']
+        y = self.matriz_com_amostras_ruido if self.ruido else self.matriz_com_amostras
+        if self.matriz_com_amostras is None:
+            self.matriz_de_amostras()
+
+        # uma única varredura temporal: eta_t[:, k] = η(x, k·dt)
+        eta_t = np.zeros((self.dom.N, self.dom.M))
+        e = eta.copy(); uu = u.copy()
+        eta_t[:, 0] = e
+        for k in range(1, self.dom.M):
+            out = self.malha_c(e, uu)
+            e, uu = out['eta_final'], out['u_final']
+            eta_t[:, k] = e
+
+        forcante = np.zeros((self.dom.N, self.dom.M))
+        forcante[steps, :] = eta_t[steps, :] - y
+        return forcante
+
+    def old_forcante(self,
                 u: np.ndarray = None,
                 eta: np.ndarray = None,
                 ): # forçante do método de volumes finitos
@@ -740,7 +799,7 @@ class Assimilacao(SolucaoAguasRasas):
                         ):
         """Retorna o custo de assimilação (Eq. funcional).
 
-        mathcal{J}[\phi] = (1/2) ∫_0^T Σ_j [ η^(f)(x_j,t) - y_j(t) ]² dt
+        mathcal{J}[phi] = (1/2) ∫_0^T Σ_j [ η^(f)(x_j,t) - y_j(t) ]² dt
 
         Otimização: em vez de chamar solucao_numerica(tempo=i) para cada
         i = 0, ..., M-1 — o que recompõe a trajetória inteira a cada i,
@@ -787,16 +846,18 @@ class Assimilacao(SolucaoAguasRasas):
         sum_diff = np.sum(diff, axis=0)      # (M,)
 
         # ---------- integração no tempo (regra do trapézio) --------------
-        '''s = 0
+        s = 0
         n = len(sum_diff)
         for i in range(1, n - 1):
             s += sum_diff[i]
-        integral = (sum_diff[0] + 2 * s + sum_diff[-1]) * self.dom.dt / 2'''
+        integral = (sum_diff[0] + 2 * s + sum_diff[-1]) * self.dom.dt / 2
 
-        #return 0.5 * integral
+        return 0.5 * integral
+        '''
         diff2 = (eta_obs - y_j)
         sum_diff2 = np.sum(diff2, axis=0)
         return np.dot(sum_diff2, sum_diff2)#!<------ mudança aqui
+        '''
 
     def old_custo_assimilacao(self,
                           eta: np.ndarray = None,
@@ -880,71 +941,75 @@ class Assimilacao(SolucaoAguasRasas):
                 'custo': custo, # funcional custo de cada passo do gradiente descendente
                 'all_solutions': all_solutions_eta, # todas as soluções eta produzidas pelo gradiente descendente 
             }
-    
 
-    def old_gradiente_descendente_otimizado(self,
-                                it:int = 10):
-            """Calculo do gradiente descendente considerando n=it iterações"""
-            def reconstruction_error(vet):
-                return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
-            from tqdm import tqdm
-            from scipy.optimize import line_search
-            '''def graphic(v,j):
-                plt.clf()
-                plt.ylim(-0.025, 0.06) # y limit
-                plt.xlim(-2.3, 2.3) # x limit
-                plt.plot(self.dom.x, v, label = 'phi^(f)(x) assimilada' )
-                #plt.plot(dom.x, sol.eta_zero(dom.x), label = '$phi^{{(t)}}(x)$ realidade' f'\nDiff = : {diff:.2e}' )
-                plt.plot(self.dom.x, self.sol.eta_zero(self.dom.x), label = 'phi^(t)(x) realidade' )
-                plt.title(f'Execução {j+1} utilizando {self.n_amostras} amostras com Δ x =  {self.Delta_x}.')
-                plt.legend()
-                plt.pause(0.9)'''
-            solucao_final_eta = np.zeros(self.dom.N) #chute inicial
-            solucao_final_u = np.zeros(self.dom.N) #chute inicial
-            all_solutions_eta = np.zeros((self.dom.N,it))
-            error = []
-            custo = []
-            alpha = []
-            if self.modo == "analitico":
-                for _ in tqdm(range(it)):
-                    grad = self.grad_analitico(solucao_final_eta)
-                    otimi = line_search(self.custo_assimilacao, self.grad_analitico, solucao_final_eta, -grad)
-                    solucao_final_eta = solucao_final_eta - otimi[0]*grad   
-                    error.append(reconstruction_error(solucao_final_eta))
-                    custo.append(self.custo_assimilacao(solucao_final_eta))
-                    alpha.append(otimi[0])
-            else:
-                
-                
-                for i in tqdm(range(it)):
-                    def grad_eta(eta): # função para retornar apenas o grad_eta utlizado na otimização
-                        return self.grad(cond_eta = eta, cond_u = solucao_final_u)['eta_grad']
-                    grad_eta_local = grad_eta(eta = solucao_final_eta) # gera a direção de decaimento
-                    grad_u = self.grad(cond_eta = solucao_final_eta, cond_u = solucao_final_u)['u_grad']         
-                    otimi = line_search(self.custo_assimilacao, grad_eta, solucao_final_eta, -grad_eta_local ) #gera a otimização do passo do gradiente descendente
-                    if otimi[0] is None: # garante que o gradiente irá funcionar mesmo se não houver otimização do passo do gradiente descendente
-                        alpha_i = 0.1
-                        print(f"Não houve otimização do passo na iteração {i}")
-                    else:
-                        alpha_i = otimi[0]
-                    solucao_final_eta = solucao_final_eta - alpha_i*grad_eta_local
-                    solucao_final_u = solucao_final_u - 0.1*grad_u
-                    error.append(reconstruction_error(solucao_final_eta))
-                    custo.append(self.custo_assimilacao(solucao_final_eta))
-                    alpha.append(alpha_i)
-                    all_solutions_eta[:,i] = solucao_final_eta
-                    #graphic(solucao_final_eta,i)
+    def _passo_robusto(self,
+                       eta: np.ndarray,
+                       grad_eta_local: np.ndarray,
+                       J_atual: float,
+                       alpha_prev: float = 0.1,
+                       alpha_min: float = 1e-6,
+                       alpha_max: float = 1.0,
+                       grad_fun=None):
+        """Escolhe alpha para o gradiente descendente de forma robusta.
 
-            return {
-                    'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
-                    'u_final': solucao_final_u, # u após it execuções do gradiente descendente con learning rate fixo
-                    'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
-                    'custo': custo, # funcional custo de cada passo do gradiente descendente
-                    'alpha': alpha, # passo do gradiente descendente para ser aproveitado posteriormente
-                    'all_solutions': all_solutions_eta #todas as soluções do eta
-                }
+        Estratégia:
+          1. Tenta line_search de Wolfe com tolerâncias afrouxadas (c2=0.5)
+             e old_fval=J_atual (evita reavaliar o ponto atual).
+          2. Se falhar, faz backtracking de Armijo (só usa J, não o gradiente).
+          3. Se ainda falhar, devolve alpha_min como fallback seguro.
 
-    def gradiente_descendente_otimizado(self, it: int = 10):
+        Retorna (alpha_i, J_novo).
+        """
+        from scipy.optimize import line_search
+
+        pk = -grad_eta_local
+        gTp = float(np.dot(grad_eta_local, pk))   # = -||g||²
+
+        # Sanity check: direção de descida?
+        if (not np.isfinite(gTp)) or gTp >= 0:
+            # Não é direção de descida — devolve passo padrão, sem tentar line search
+            return alpha_prev, J_atual
+
+        if grad_fun is None:
+            grad_fun = lambda e: self.grad(cond_eta=e,
+                                           cond_u=np.zeros_like(e))['eta_grad']
+
+        # ---------- 1ª tentativa: Wolfe afrouxado ----------
+        try:
+            otimi = line_search(
+                self.custo_assimilacao,
+                grad_fun,
+                eta,
+                pk,
+                c1=1e-4,
+                c2=0.5,          # padrão 0.9 é estrito demais aqui
+                maxiter=30,
+                old_fval=J_atual,
+            )
+            alpha = otimi[0]
+        except Exception:
+            alpha = None
+
+        if alpha is not None and np.isfinite(alpha) and alpha_min <= alpha <= alpha_max:
+            Jn = self.custo_assimilacao(eta + alpha * pk)
+            if np.isfinite(Jn):
+                return float(alpha), float(Jn)
+
+        # ---------- 2ª tentativa: Armijo backtracking ----------
+        alpha = alpha_prev if alpha_min <= alpha_prev <= alpha_max else 0.1
+        for _ in range(40):
+            novo = eta + alpha * pk
+            Jn = self.custo_assimilacao(novo)
+            if np.isfinite(Jn) and Jn <= J_atual + 1e-4 * alpha * gTp:
+                return float(alpha), float(Jn)
+            alpha *= 0.5
+            if alpha < alpha_min:
+                break
+
+        # ---------- 3ª tentativa: passo mínimo ----------
+        return alpha_min, self.custo_assimilacao(eta + alpha_min * pk)
+
+    def old_gradiente_descendente_otimizado(self, it: int = 10):
         """Gradiente descendente com passo otimizado por line search (Wolfe)."""
         from tqdm import tqdm
         from scipy.optimize import line_search
@@ -1002,6 +1067,66 @@ class Assimilacao(SolucaoAguasRasas):
             'all_solutions': all_solutions_eta,
         } 
 
+    def gradiente_descendente_otimizado(self, it: int = 10):
+        """Gradiente descendente com passo otimizado por passo robusto
+        (line_search de Wolfe + fallback Armijo + fallback alpha_min)."""
+        from tqdm import tqdm
+
+        def reconstruction_error(vet):
+            return (np.linalg.norm(vet - self.sol.eta_zero())
+                    / np.linalg.norm(self.sol.eta_zero()))
+
+        solucao_final_eta = np.zeros(self.dom.N)
+        u_fixo = np.zeros(self.dom.N)          # u(x,0) = 0 é dado, não incógnita
+        all_solutions_eta = np.zeros((self.dom.N, it))
+        error, custo, alpha = [], [], []
+
+        if self.modo == "analitico":
+            J_atual = self.custo_assimilacao(solucao_final_eta)
+            for i in tqdm(range(it)):
+                grad = self.grad_analitico(solucao_final_eta)
+                alpha_i, J_atual = self._passo_robusto(
+                    solucao_final_eta,
+                    grad,
+                    J_atual,
+                    alpha_prev=alpha[-1] if alpha else 0.1,
+                    grad_fun=self.grad_analitico,
+                )
+                solucao_final_eta = solucao_final_eta - alpha_i * grad
+                error.append(reconstruction_error(solucao_final_eta))
+                custo.append(J_atual)
+                alpha.append(alpha_i)
+                all_solutions_eta[:, i] = solucao_final_eta
+
+        else:
+            # gradiente de J w.r.t. eta, com u FIXO em u_fixo (consistente com o custo)
+            def grad_eta(eta):
+                return self.grad(cond_eta=eta, cond_u=u_fixo)['eta_grad']
+
+            J_atual = self.custo_assimilacao(solucao_final_eta)
+            for i in tqdm(range(it)):
+                grad_eta_local = grad_eta(solucao_final_eta)
+                alpha_i, J_atual = self._passo_robusto(
+                    solucao_final_eta,
+                    grad_eta_local,
+                    J_atual,
+                    alpha_prev=alpha[-1] if alpha else 0.1,
+                    grad_fun=grad_eta,
+                )
+                solucao_final_eta = solucao_final_eta - alpha_i * grad_eta_local
+                error.append(reconstruction_error(solucao_final_eta))
+                custo.append(J_atual)
+                alpha.append(alpha_i)
+                all_solutions_eta[:, i] = solucao_final_eta
+
+        return {
+            'eta_final':      solucao_final_eta,
+            'u_final':        u_fixo,
+            'error':          error,
+            'custo':          custo,
+            'alpha':          alpha,
+            'all_solutions':  all_solutions_eta,
+        }
 
 
 if __name__ == "__main__":
@@ -1092,31 +1217,39 @@ if __name__ == "__main__":
         plt.legend()
         plt.show()
 
-
     elif op == 18: #salva todos os dados constrído
-        resultados = {}
-        for n_amostras in (2, 3, 4, 5, 6):
-            ass_i = Assimilacao(dom, modo=modo, n_amostras=n_amostras,
-                                ruido=ruido, first_sample=first_sample,
-                                Delta_x=Delta_x)
+        import os
+        # 1 thread por worker — evita que o OpenBLAS crie 64 threads dentro de cada processo
+        for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+            os.environ.setdefault(v, "1")
 
-            gd_ot = ass_i.gradiente_descendente_otimizado(it=iteracoes)
-            gd_no = ass_i.gradiente_descendente(it=iteracoes)
+        from multiprocessing import Pool
 
-            resultados[(n_amostras, "ot")] = gd_ot
-            resultados[(n_amostras, "no")] = gd_no
+        MODOS = ("analitico", "malha_c")
 
-            # grava já, antes de ir para a próxima amostra
-            tag = f"n{n_amostras}"
-            np.savetxt(f"data/gd_n{n_amostras}_ot_custo_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", np.array(gd_ot['custo']),  delimiter=",")
-            np.savetxt(f"data/gd_n{n_amostras}_ot_erro_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv",  np.array(gd_ot['error']),  delimiter=",")
-            np.savetxt(f"data/gd_n{n_amostras}_ot_alpha_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", np.array(gd_ot['alpha']),  delimiter=",")
-            np.savetxt(f"data/gd_n{n_amostras}_no_custo_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", np.array(gd_no['custo']),  delimiter=",")
-            np.savetxt(f"data/gd_n{n_amostras}_no_erro_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv",  np.array(gd_no['error']),  delimiter=",")
-            # opcional: matrizes 2D
-            np.savetxt(f"data/gd_n{n_amostras}_ot_all_solutions_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_ot['all_solutions'].T, delimiter=",")
-            np.savetxt(f"data/gd_n{n_amostras}_ot_all_solutions_{modo}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_no['all_solutions'].T, delimiter=",")
-            print(f"[ok] n={n_amostras} salvo.")
+        tarefas = [(n, N, M, m, ruido, first_sample, Delta_x, iteracoes)
+            for m in MODOS
+            for n in (2, 3, 4, 5, 6)]
+        
+        with Pool(processes=len(tarefas)) as pool:          # 5 workers
+            for res in pool.imap_unordered(_worker_assimilacao, tarefas):
+                n_amostras = res['n']
+                modo_res   = res['modo']
+                gd_ot, gd_no = res['ot'], res['no']
+
+                # grava já, antes de ir para a próxima amostra
+                tag = f"n{n_amostras}"
+                flag2 = 'with_noise' if ruido else 'without_noise'
+                np.savetxt(f"data/linear_gd_n{n_amostras}_ot_custo_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv", np.array(gd_ot['custo']),  delimiter=",")
+                np.savetxt(f"data/linear_gd_n{n_amostras}_ot_erro_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv",  np.array(gd_ot['error']),  delimiter=",")
+                np.savetxt(f"data/linear_gd_n{n_amostras}_ot_alpha_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv", np.array(gd_ot['alpha']),  delimiter=",")
+                np.savetxt(f"data/linear_gd_n{n_amostras}_no_custo_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv", np.array(gd_no['custo']),  delimiter=",")
+                np.savetxt(f"data/linear_gd_n{n_amostras}_no_erro_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv",  np.array(gd_no['error']),  delimiter=",")
+                # opcional: matrizlinear_es 2D
+                np.savetxt(f"data/linear_gd_n{n_amostras}_ot_all_solutions_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_ot['all_solutions'].T, delimiter=",")
+                np.savetxt(f"data/linear_gd_n{n_amostras}_no_all_solutions_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_no['all_solutions'].T, delimiter=",")
+                #print(f"[ok] n={n_amostras} salvo.")
+                print(f"[ok] n={n_amostras} modo={modo_res} salvo.")
 
     elif op == 17: #teste rápido de salvamento
         #import os, psutil
@@ -1488,6 +1621,8 @@ if __name__ == "__main__":
     elif op == 8: #imprimir os passos das amostras
     
         caso1 = ass.construtor_passos()
+        print(f'Delta_x = {ass.Delta_x}')
+        print(f'Primeira amostras = {ass.first_sample}')
         print(f'passos de amostragem {caso1['passos']}')
         print(f'Vetor xj = {caso1['xj']}')
 
@@ -1637,6 +1772,60 @@ if __name__ == "__main__":
                          
     elif op == -2: #lixo 
         '''
+         ###################### versão 13/09/2026 ###########################
+        ########################### radiente descendente otimizado ##############################
+        def old_gradiente_descendente_otimizado(self,
+                                        it:int = 10):
+                    """Calculo do gradiente descendente considerando n=it iterações"""
+                    def reconstruction_error(vet):
+                        return np.linalg.norm(vet - self.sol.eta_zero())/np.linalg.norm(self.sol.eta_zero())
+                    from tqdm import tqdm
+                    from scipy.optimize import line_search
+         
+                    solucao_final_eta = np.zeros(self.dom.N) #chute inicial
+                    solucao_final_u = np.zeros(self.dom.N) #chute inicial
+                    all_solutions_eta = np.zeros((self.dom.N,it))
+                    error = []
+                    custo = []
+                    alpha = []
+                    if self.modo == "analitico":
+                        for _ in tqdm(range(it)):
+                            grad = self.grad_analitico(solucao_final_eta)
+                            otimi = line_search(self.custo_assimilacao, self.grad_analitico, solucao_final_eta, -grad)
+                            solucao_final_eta = solucao_final_eta - otimi[0]*grad   
+                            error.append(reconstruction_error(solucao_final_eta))
+                            custo.append(self.custo_assimilacao(solucao_final_eta))
+                            alpha.append(otimi[0])
+                    else:
+                        
+                        
+                        for i in tqdm(range(it)):
+                            def grad_eta(eta): # função para retornar apenas o grad_eta utlizado na otimização
+                                return self.grad(cond_eta = eta, cond_u = solucao_final_u)['eta_grad']
+                            grad_eta_local = grad_eta(eta = solucao_final_eta) # gera a direção de decaimento
+                            grad_u = self.grad(cond_eta = solucao_final_eta, cond_u = solucao_final_u)['u_grad']         
+                            otimi = line_search(self.custo_assimilacao, grad_eta, solucao_final_eta, -grad_eta_local ) #gera a otimização do passo do gradiente descendente
+                            if otimi[0] is None: # garante que o gradiente irá funcionar mesmo se não houver otimização do passo do gradiente descendente
+                                alpha_i = 0.1
+                                print(f"Não houve otimização do passo na iteração {i}")
+                            else:
+                                alpha_i = otimi[0]
+                            solucao_final_eta = solucao_final_eta - alpha_i*grad_eta_local
+                            solucao_final_u = solucao_final_u - 0.1*grad_u
+                            error.append(reconstruction_error(solucao_final_eta))
+                            custo.append(self.custo_assimilacao(solucao_final_eta))
+                            alpha.append(alpha_i)
+                            all_solutions_eta[:,i] = solucao_final_eta
+                            #graphic(solucao_final_eta,i)
+        
+                    return {
+                            'eta_final' : solucao_final_eta, # eta após it execuções do gradiente descendente con learning rate fixo
+                            'u_final': solucao_final_u, # u após it execuções do gradiente descendente con learning rate fixo
+                            'error' : error, # Erro de reconstrução de cada passo do gradiente descendente
+                            'custo': custo, # funcional custo de cada passo do gradiente descendente
+                            'alpha': alpha, # passo do gradiente descendente para ser aproveitado posteriormente
+                            'all_solutions': all_solutions_eta #todas as soluções do eta
+                        }
 
             def matrix_sample_noise_constructor (self):
         """Creates a matrix containing all sample data with noise."""

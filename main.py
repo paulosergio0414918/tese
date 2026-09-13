@@ -18,14 +18,14 @@ otim = 'ot' # caso queira gradimente descendente otimizado
 
 ###opção
 op = 18
-iteracoes = 2**3
+iteracoes = 2**6
 
 #### Variáveis
 # N=1025; M = 513 #cfl = 0.5
 N=1024; M = 320 #cfl = 0.8
 #N=512;  M = 160 #cfl = 0.8
 #N=1025; M=257   #cfl = 1
-amos = 3
+amos = 2
 ruido = False
 first_sample = .2 # paper uses first_sample = 0.2
 Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
@@ -33,31 +33,40 @@ Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-exam
 discretizacao = "malha_c"
 modo = "malha_c"
 #modo = "analitico"
-save = False
+
+eq = 'nao_linear'
 
 dom = Dominio(N = N, M = M) #cfl = 0.8
 sol = swel.SolucaoAguasRasas(dom)
 
+flag2 = 'with_noise' if ruido else 'without_noise'
+
 def _tag(v): return f"{v:g}".replace("-", "m").replace(".", "p")
 
-def _load(n_obs,otim , opc, modo, fs, Dx, it):
-    return np.loadtxt(f"data/gd_n{n_obs}_{otim}_{opc}_{modo}_fs_{_tag(fs)}_deltax_{_tag(Dx)}_it_{it}.csv", delimiter=",")
+def _load(eq, n_obs,otim , opc, modo, fs, Dx, it):
+    return np.loadtxt(f"data/{eq}_gd_n{n_obs}_{otim}_{opc}_{modo}_fs_{_tag(fs)}_deltax_{_tag(Dx)}_it_{it}_{flag2}.csv", delimiter=",")
 
+def _load_antigo(n_obs,otim , opc, modo, fs, Dx, it):
+    return np.loadtxt(f"data/dados_antigos/gd_n{n_obs}_{otim}_{opc}_{modo}_fs_{_tag(fs)}_deltax_{_tag(Dx)}_it_{it}.csv", delimiter=",")
+
+cores = {2: "black", 3: "blue", 4: "green", 5: "red", 6: "yellow"}
 
 if opc == "custo":
     fig, ax = plt.subplots()
     x = np.arange(1, iteracoes + 1)
-    cores = {2: "black", 3: "blue", 4: "green", 5: "red", 6: "yellow"}
+    
     for n in (2, 3, 4, 5, 6):
-        c_ot = _load(n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
+        c_ot = _load(eq, n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
+        #c_ot_ant = _load_antigo(n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
         #c_no = _load(n, 'no', opc, modo, first_sample, Delta_x, iteracoes )
         ax.scatter(x, c_ot/c_ot[0], s=8, color=cores[n], label=f"otimizado {n} amostras")
-        #ax.scatter(x, c_no / c_no[0], s=8, label=f"não otimizado {n} amostras")
+        #ax.scatter(x, c_ot_ant/c_ot_ant[0], s=8, label=f"otimizado {n} amostras antigo")
+        #ax.scatter(x, c_no/c_no[0], s=8, color=cores[n], label=f"não otimizado {n} amostras")
 
     ax.set_yscale("log")
     ax.set_xlabel("Iteração")
     ax.set_ylabel("J^(n) / J^(0)")
-    ax.set_title(f"Convergência do custo — Δx = {Delta_x}")
+    ax.set_title(f"Convergência do custo {modo} — Δx = {Delta_x}")
     ax.legend()
     plt.tight_layout()
     plt.show()
@@ -67,33 +76,37 @@ elif opc == "erro":
     x = np.arange(1, iteracoes + 1)
 
     for n in (2,3,4,5, 6):
-        c_ot = _load(n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
+        c_ot = _load(eq, n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
+        #c_ot_ant = _load_antigo(n, 'ot', opc, modo, first_sample, Delta_x, iteracoes )
         #c_no = _load(n, 'no', opc, modo, first_sample, Delta_x, iteracoes )
-        ax.scatter(x, c_ot, s=8, label=f"otimizado {n} amostras")
-        #ax.scatter(x, c_no, s=8, label=f"não otimizado {n} amostras")
+        ax.scatter(x, c_ot, s=8, color=cores[n], label=f"otimizado {n} amostras")
+        #ax.scatter(x, c_ot_ant/c_ot_ant[0], s=8, label=f"otimizado {n} amostras antigo")
+        #ax.scatter(x, c_no, s=8, color=cores[n], label=f"não otimizado {n} amostras")
 
     ax.set_yscale("log")
     ax.set_xlabel("Iteração")
     ax.set_ylabel("||(phi^t(x) - phi^n(x))||/||phi^t(x)||")
-    ax.set_title(f"Erro de de reconstrução da condição inicial— Δx = {Delta_x}")
+    ax.set_title(f"Erro {modo} de reconstrução da condição inicial— Δx = {Delta_x}")
     ax.legend()
     plt.tight_layout()
     plt.show()
 
 elif opc == "all_solutions":
-    all_sol2 = _load(amos, "ot", opc, "analitico", first_sample, Delta_x, iteracoes)
-    all_sol = _load(amos, "ot", opc, modo, first_sample, Delta_x, iteracoes)
+    if eq == 'linear':
+        all_sol2 = _load(eq, amos, "ot", opc, "analitico", first_sample, Delta_x, iteracoes)
+        
+    all_sol = _load(eq, amos, "ot", opc, modo, first_sample, Delta_x, iteracoes)
     m = all_sol.shape[1]
     x= np.linspace(-4,4,m)
     for j in range(iteracoes):
         eta_j = all_sol[j, :]
-        eta2_j = all_sol2[j, :]
+        #eta2_j = all_sol2[j, :]
 
         plt.clf()
         plt.ylim(-0.025, 0.06)
         plt.xlim(-2.3, 2.3)
         plt.plot(x, sol.eta_zero(), label='φ^(t)')
-        plt.plot(x, eta2_j, label=f"φ^(n) analitico")
+        #plt.plot(x, eta2_j, label=f"φ^(n) analitico")
         plt.plot(x, eta_j, label=f"φ^(n) {modo}")
 
 
