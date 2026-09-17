@@ -1378,7 +1378,7 @@ if __name__ == "__main__":
 
                      
     op = 18
-    it = 2**6
+    it = 2**10
     iteracoes = it
 
 

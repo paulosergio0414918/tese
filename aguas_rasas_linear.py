@@ -1141,7 +1141,7 @@ if __name__ == "__main__":
 
     ###opção
     op = 18
-    iteracoes = 2**3
+    iteracoes = 2**10
 
     #### Variáveis
     # N=1025; M = 513 #cfl = 0.5
@@ -1246,8 +1246,8 @@ if __name__ == "__main__":
                 np.savetxt(f"data/linear_gd_n{n_amostras}_no_custo_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv", np.array(gd_no['custo']),  delimiter=",")
                 np.savetxt(f"data/linear_gd_n{n_amostras}_no_erro_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv",  np.array(gd_no['error']),  delimiter=",")
                 # opcional: matrizlinear_es 2D
-                np.savetxt(f"data/linear_gd_n{n_amostras}_ot_all_solutions_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_ot['all_solutions'].T, delimiter=",")
-                np.savetxt(f"data/linear_gd_n{n_amostras}_no_all_solutions_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}.csv", gd_no['all_solutions'].T, delimiter=",")
+                np.savetxt(f"data/linear_gd_n{n_amostras}_ot_all_solutions_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv", gd_ot['all_solutions'].T, delimiter=",")
+                np.savetxt(f"data/linear_gd_n{n_amostras}_no_all_solutions_{modo_res}_fs_{_tag(first_sample)}_deltax_{_tag(Delta_x)}_it_{iteracoes}_{flag2}.csv", gd_no['all_solutions'].T, delimiter=",")
                 #print(f"[ok] n={n_amostras} salvo.")
                 print(f"[ok] n={n_amostras} modo={modo_res} salvo.")
 

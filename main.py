@@ -8,37 +8,38 @@ import aguas_rasas_linear as swel
 import aguas_rasas_nao_linear as swenl
 from dominio import Dominio
 
-
+###opção
 #opc = 'custo'
+eq = 'nao_linear' # or 'linear'
 opc = "all_solutions"
 #opc = "erro"
 
 otim = 'ot' # caso queira gradimente descendente otimizado
 #otim = no # caso queira gradiente descendente não otimizado
 
-###opção
 op = 18
-iteracoes = 2**6
+iteracoes = 2**10
+discretizacao = "malha_c"
+modo = "malha_c"
+#modo = "analitico"
+
+
+
 
 #### Variáveis
 # N=1025; M = 513 #cfl = 0.5
 N=1024; M = 320 #cfl = 0.8
 #N=512;  M = 160 #cfl = 0.8
 #N=1025; M=257   #cfl = 1
-amos = 2
+amos = 6
 ruido = False
 first_sample = .2 # paper uses first_sample = 0.2
 Delta_x =  0.09 # paper uses Delta_x = 0.09 end Delta_x = 0.375 for counter-example
-
-discretizacao = "malha_c"
-modo = "malha_c"
-#modo = "analitico"
-
-eq = 'nao_linear'
-
 dom = Dominio(N = N, M = M) #cfl = 0.8
 sol = swel.SolucaoAguasRasas(dom)
 
+
+######### métodos ###############
 flag2 = 'with_noise' if ruido else 'without_noise'
 
 def _tag(v): return f"{v:g}".replace("-", "m").replace(".", "p")
@@ -92,21 +93,21 @@ elif opc == "erro":
     plt.show()
 
 elif opc == "all_solutions":
-    if eq == 'linear':
-        all_sol2 = _load(eq, amos, "ot", opc, "analitico", first_sample, Delta_x, iteracoes)
+    
         
+    all_sol2 = _load('linear', amos, "ot", opc, modo, first_sample, Delta_x, iteracoes)    
     all_sol = _load(eq, amos, "ot", opc, modo, first_sample, Delta_x, iteracoes)
     m = all_sol.shape[1]
     x= np.linspace(-4,4,m)
     for j in range(iteracoes):
         eta_j = all_sol[j, :]
-        #eta2_j = all_sol2[j, :]
+        eta2_j = all_sol2[j, :]
 
         plt.clf()
         plt.ylim(-0.025, 0.06)
         plt.xlim(-2.3, 2.3)
         plt.plot(x, sol.eta_zero(), label='φ^(t)')
-        #plt.plot(x, eta2_j, label=f"φ^(n) analitico")
+        plt.plot(x, eta2_j, label=f"φ^(n) linear")
         plt.plot(x, eta_j, label=f"φ^(n) {modo}")
 
 
@@ -115,7 +116,7 @@ elif opc == "all_solutions":
             f"n={amos}, Δx={Delta_x}, fs={first_sample}, modo={modo}"
         )
         plt.legend()
-        plt.pause(0.1)
+        plt.pause(0.01)
 
     plt.show()
 
