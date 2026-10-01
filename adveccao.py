@@ -117,7 +117,7 @@ class Validacao(SolucaoAdveccao):
             self.testes = testes
             #import dominio
 
-        def tabela(self):
+        '''def tabela(self):
             """ Apresenta uma tabela com os erros de aproximação """
             import math
             from rich import print
@@ -139,9 +139,150 @@ class Validacao(SolucaoAdveccao):
                 else:
                     tab.add_row(f"{domi.N}", f"{domi.M}", f"{s.CFL()}", f"{vetor_erro[j]:.4e}", f"{math.log(abs(vetor_erro[j-1]/vetor_erro[j]))/math.log(4):.4e}" )
     
+            print(tab)'''
+
+        def tabela(self):
+            """Tabela de convergência do método de Lax-Friedrichs nas normas L¹, L² e L∞."""
+            import math
+            from rich import print
+            from rich.table import Table
+            from dominio import Dominio   # garante que 'Dominio' está acessível no escopo do método
+
+            # Malhas planejadas para validação
+            valores_N = [256, 512, 1024, 2048, 4096, 8192]
+
+            erros_L1   = []
+            erros_L2   = []
+            erros_Linf = []
+
+            tab = Table(title="Ordem de convergência - Lax-Friedrichs (normas L¹, L² e L∞)")
+            tab.add_column("N",     justify="center")
+            tab.add_column("M",     justify="center")
+            tab.add_column("Δx",    justify="center")
+            tab.add_column("Δt",    justify="center")
+            tab.add_column("CFL",   justify="center")
+            tab.add_column("L¹",    justify="center")
+            tab.add_column("Ordem L¹", justify="center", style="red")
+            tab.add_column("L²",    justify="center")
+            tab.add_column("ordem L²", justify="center", style="red")
+            tab.add_column("L∞",    justify="center")
+            tab.add_column("ordem L∞", justify="center", style="red")
+
+            for j, N in enumerate(valores_N):
+                # CFL = 0.5: para c=1, T=2, L-L0=8, resulta M = N/2
+                M = int((N*100) // 392)
+
+                domi = Dominio(N=N, M=M)
+                s = SolucaoAdveccao(domi)
+
+                # A analítica é avaliada em t = (iteracao+1)*dt; para coincidir com
+                # o tempo final da numérica (t = M*dt), passamos iteracao = M - 1.
+                sol_analitica = s.solucao_analitica(iteracao=s.dom.M - 1)
+                sol_numerica  = s.solucao_numerica()
+
+                erro = np.abs(sol_analitica - sol_numerica)
+
+                L1   = domi.dx * np.sum(erro)
+                L2   = np.sqrt(domi.dx * np.sum(erro**2))
+                Linf = np.max(erro)
+
+                erros_L1.append(L1)
+                erros_L2.append(L2)
+                erros_Linf.append(Linf)
+
+                cfl = s.CFL()
+
+                if j == 0:
+                    tab.add_row(
+                        f"{N}", f"{M}",
+                        f"{domi.dx:.4e}", f"{domi.dt:.4e}", f"{cfl:.3f}",
+                        f"{L1:.4e}",   "---",
+                        f"{L2:.4e}",   "---",
+                        f"{Linf:.4e}", "---",
+                    )
+                else:
+                    # N dobra a cada refinamento → denominador log(2)
+                    p1   = math.log(erros_L1[j-1]   / erros_L1[j])   / math.log(2)
+                    p2   = math.log(erros_L2[j-1]   / erros_L2[j])   / math.log(2)
+                    pinf = math.log(erros_Linf[j-1] / erros_Linf[j]) / math.log(2)
+
+                    tab.add_row(
+                        f"{N}", f"{M}",
+                        f"{domi.dx:.4e}", f"{domi.dt:.4e}", f"{cfl:.3f}",
+                        f"{L1:.4e}",   f"{p1:.4f}",
+                        f"{L2:.4e}",   f"{p2:.4f}",
+                        f"{Linf:.4e}", f"{pinf:.4f}",
+                    )
+
             print(tab)
 
-        def graficos(self):
+        def graficos(self, salvar: bool = False):
+            """Gera os gráficos comparativos entre as soluções analítica e numérica.
+
+            Usa as mesmas malhas do método tabela():
+                N ∈ {256, 512, 1024, 2048, 4096, 8192}
+                M = int((N*100)//392)  →  CFL ≈ 0.98
+
+            Para cada malha, produz dois painéis:
+                (esquerda) analítica e numérica sobrepostas;
+                (direita)  erro ponto a ponto (analítica − numérica).
+            """
+            import matplotlib.pyplot as plt
+            from dominio import Dominio
+
+            valores_N = [256, 512, 1024, 2048, 4096, 8192]
+            n_testes = len(valores_N)
+
+            fig, axs = plt.subplots(n_testes, 2, figsize=(12, 3 * n_testes))
+
+            for i, N in enumerate(valores_N):
+                M = int((N * 100) // 392)        # CFL ≈ 0.98
+                domi = Dominio(N=N, M=M)
+                s = SolucaoAdveccao(domi)
+
+                # A analítica tem "+1" embutido; avaliamos em t = M*dt via iteracao = M-1
+                sol_an  = s.solucao_analitica(iteracao=domi.M - 1)
+                sol_num = s.solucao_numerica()
+                erro    = sol_an - sol_num
+
+                cfl = s.CFL()
+
+                # ----------------- Painel esquerdo: sobreposição -----------------
+                axs[i, 0].plot(domi.x, sol_an,  color='black',      linewidth=1.4,
+                            label='Analítica')
+                axs[i, 0].plot(domi.x, sol_num, color='tab:blue',   linewidth=1.2,
+                            linestyle='--', label='Numérica')
+                axs[i, 0].set_title(
+                    f"N = {N},  M = {M},  CFL = {cfl:.4f}", fontsize=10
+                )
+                axs[i, 0].set_xlabel("x")
+                axs[i, 0].set_ylabel(r"$\eta$")
+                axs[i, 0].grid(True, alpha=0.3)
+                axs[i, 0].legend(fontsize=8, loc='upper right')
+
+                # ----------------- Painel direito: erro --------------------------
+                axs[i, 1].plot(domi.x, erro, color='tab:red', linewidth=1.1)
+                axs[i, 1].axhline(0.0, color='black', linewidth=0.5, linestyle=':')
+                axs[i, 1].set_title(
+                    f"Erro pontual  —  N = {N},  "
+                    fr"$\|e\|_{{L^\infty}} = {np.max(np.abs(erro)):.3e}$",
+                    fontsize=10
+                )
+                axs[i, 1].set_xlabel("x")
+                axs[i, 1].set_ylabel(r"$\eta - \eta_{\mathrm{num}}$")
+                axs[i, 1].grid(True, alpha=0.3)
+
+            fig.suptitle(
+                "Validação da equação da advecção — Lax-Friedrichs, CFL ≈ 0.98",
+                fontsize=13, fontweight='bold', y=1.00
+            )
+            fig.tight_layout()
+
+
+
+            plt.show()
+
+        '''def graficos(self):
             """Apresenta o grafico para da solução analítica e numérica variando os valores de M e de N"""
             import matplotlib.pyplot as plt
             fig, axs = plt.subplots(self.testes, 2)
@@ -159,7 +300,7 @@ class Validacao(SolucaoAdveccao):
                 axs[i, 1].set_ylabel("u")
 
             fig.tight_layout()
-            plt.show()
+            plt.show()'''
 
 class Assimilacao(SolucaoAdveccao):
     """ Classe destinada a coletar as amostras para assimilação."""
@@ -545,7 +686,7 @@ if __name__ == "__main__":
     from rich import print
     from rich.table import Table
     ###### parâmetros #######
-    op = 13
+    op = 15
     ruido = True
     iteracoes = 64
     amos = 2
@@ -1030,77 +1171,155 @@ if __name__ == "__main__":
 
         print(tab)
 
-    elif op == 16:
-        ass1 = Assimilacao(dom, modo="estocastico", n_amostras = 2)
-        ass2 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=2)
-        
-        ass3 = Assimilacao(dom, modo="estocastico", n_amostras = 4)            
-        ass4 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=4)
-        
-        ass5 = Assimilacao(dom, modo="estocastico", n_amostras=8)
-        ass6 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras = 8)
-        
-        ass7 = Assimilacao(dom, modo="estocastico", n_amostras=16)
-        ass8 = Assimilacao(dom, modo="analitico", ruido= False, n_amostras=16)
+    
+    elif op == 16:  # gera tabela de convergência em LaTeX (apenas taxas)
+        import math
+        import os
+        from dominio import Dominio
 
-        import matplotlib.pyplot as plt
-        fig, axs = plt.subplots(2, 2)
-        axs[0, 0].set_title(f"Métodos com duas amostras e {iteracoes} iterações.")
-        axs[0, 0].plot(dom.x, ass1.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
-        axs[0, 0].plot(dom.x, ass2.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)
-        axs[0, 0].legend()
-        axs[0, 0].set_xlabel("x")
-        axs[0, 0].set_ylabel("u_0(x)")
+        valores_N = [256, 512, 1024, 2048, 4096, 8192]
 
+        linhas = []
+        erros_L1, erros_L2, erros_Linf = [], [], []
 
-        axs[0, 1].set_title(f"Métodos com quatro amostras e {iteracoes} iterações.")
-        axs[0, 1].plot(dom.x, ass3.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
-        axs[0, 1].plot(dom.x, ass4.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)            
-        axs[0, 1].legend()
-        axs[0, 1].set_xlabel("x")
-        axs[0, 1].set_ylabel("u_0(x)")
+        for N in valores_N:
+            M = int((N * 100) // 392)                 # CFL ≈ 0.98
+            domi = Dominio(N=N, M=M)
+            s = SolucaoAdveccao(domi)
 
-        axs[1, 0].set_title(f"Métodos com oito amostras e {iteracoes} iterações.")
-        axs[1, 0].plot(dom.x, ass5.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
-        axs[1, 0].plot(dom.x, ass6.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)            
-        axs[1, 0].legend()
-        axs[1, 0].set_xlabel("x")
-        axs[1, 0].set_ylabel("u_0(x)")
+            sol_an  = s.solucao_analitica(iteracao=s.dom.M - 1)
+            sol_num = s.solucao_numerica()
+            erro    = np.abs(sol_an - sol_num)
 
-        axs[1, 1].set_title(f"Métodos com dezesseis amostras e {iteracoes} iterações.")
-        axs[1, 1].plot(dom.x, ass7.gradiente_descendente(it = iteracoes), label="Estocástico", linewidth=1)
-        axs[1, 1].plot(dom.x, ass8.gradiente_descendente(it = iteracoes), label="Analítico", linewidth=1)            
-        axs[1, 1].legend()
-        axs[1, 1].set_xlabel("x")
-        axs[1, 1].set_ylabel("u_0(x)")
-        fig.tight_layout()
+            L1   = domi.dx * np.sum(erro)
+            L2   = np.sqrt(domi.dx * np.sum(erro**2))
+            Linf = np.max(erro)
 
+            erros_L1.append(L1)
+            erros_L2.append(L2)
+            erros_Linf.append(Linf)
 
-        
-        #fig.legend()
-        plt.show()
+            linhas.append({
+                "N": N, "M": M,
+                "dx": domi.dx, "dt": domi.dt,
+                "cfl": s.CFL(),
+            })
 
-    elif op == 15:
-        ass1 = Assimilacao(dom, modo="analitico", n_amostras = amos)
-        ass2 = Assimilacao(dom, modo="numerico", n_amostras = amos)
-        ass3 = Assimilacao(dom, modo="estocastico", n_amostras = amos)
-        grad_analitico = ass1.gradiente_descendente()
-        grad_numerico = ass2.gradiente_descendente()
-        grad_estocastico = ass3.gradiente_descendente()
+        # taxa de convergência (N dobra → denominador log 2)
+        def taxa(e_atual, e_anterior):
+            return math.log(e_anterior / e_atual) / math.log(2)
 
-        plt.figure(figsize=(10, 6))
+        # ---------- montagem manual do LaTeX ----------
+        cabecalho = (
+            r"\begin{tabular}{cccccccc}" "\n"
+            r"\toprule" "\n"
+            r"$N$ & $M$ & $\Delta x$ & $\Delta t$ & CFL & "
+            r"$p_{L^1}$ & $p_{L^2}$ & $p_{L^\infty}$ \\" "\n"
+            r"\midrule"
+        )
 
-        plt.plot(dom.x, grad_analitico, label='Gradiente Analítico')
-        plt.plot(dom.x, grad_numerico, label='Gradiente Numérico')
-        plt.plot(dom.x, grad_estocastico, label='Gradiente Estocástico')
+        corpo = []
+        for j, info in enumerate(linhas):
+            if j == 0:
+                p1 = p2 = pi = "---"
+            else:
+                p1 = f"{taxa(erros_L1[j],   erros_L1[j-1]):.4f}"
+                p2 = f"{taxa(erros_L2[j],   erros_L2[j-1]):.4f}"
+                pi = f"{taxa(erros_Linf[j], erros_Linf[j-1]):.4f}"
 
-        plt.xlabel('x')
-        plt.ylabel('u_0(x)')
-        plt.title(f'Assimilação de {amos} amostras e {iteracoes} iterações')
-        plt.legend()
-        plt.grid(True)
+            corpo.append(
+                f"{info['N']} & {info['M']} & "
+                f"{info['dx']:.4e} & {info['dt']:.4e} & {info['cfl']:.4f} & "
+                f"{p1} & {p2} & {pi} \\\\"
+            )
 
-        plt.show()
+        rodape = r"\bottomrule" "\n" r"\end{tabular}"
+
+        latex_tabular = "\n".join([cabecalho] + corpo + [rodape])
+
+        os.makedirs("tabelas", exist_ok=True)
+        caminho = "tabelas/adveccao_convergencia.tex"
+        with open(caminho, "w") as f:
+            f.write(latex_tabular)
+
+        print(f"\nTabela salva em: {caminho}\n")
+        print(latex_tabular)
+
+    elif op == 15:  # gera tabela de convergência em LaTeX (completo)
+        import math
+        import os
+        from dominio import Dominio
+
+        valores_N = [256, 512, 1024, 2048, 4096, 8192]
+
+        linhas = []
+        erros_L1, erros_L2, erros_Linf = [], [], []
+
+        for N in valores_N:
+            M = int((N * 100) // 392)                 # CFL ≈ 0.98
+            domi = Dominio(N=N, M=M)
+            s = SolucaoAdveccao(domi)
+
+            sol_an  = s.solucao_analitica(iteracao=s.dom.M - 1)
+            sol_num = s.solucao_numerica()
+            erro    = np.abs(sol_an - sol_num)
+
+            L1   = domi.dx * np.sum(erro)
+            L2   = np.sqrt(domi.dx * np.sum(erro**2))
+            Linf = np.max(erro)
+
+            erros_L1.append(L1)
+            erros_L2.append(L2)
+            erros_Linf.append(Linf)
+
+            linhas.append({
+                "N": N, "M": M,
+                "dx": domi.dx, "dt": domi.dt,
+                "cfl": s.CFL(),
+                "L1": L1, "L2": L2, "Linf": Linf,
+            })
+
+        # taxa de convergência (N dobra → denominador log 2)
+        def taxa(e_atual, e_anterior):
+            return math.log(e_anterior / e_atual) / math.log(2)
+
+        # ---------- montagem manual do LaTeX ----------
+        cabecalho = (
+            r"\begin{tabular}{ccccccccccc}" "\n"
+            r"\toprule" "\n"
+            r"$N$ & $M$ & $\Delta x$ & $\Delta t$ & CFL & "
+            r"$L^1$ & $p_{L^1}$ & $L^2$ & $p_{L^2}$ & $L^\infty$ & $p_{L^\infty}$ \\" "\n"
+            r"\midrule"
+        )
+
+        corpo = []
+        for j, info in enumerate(linhas):
+            if j == 0:
+                p1 = p2 = pi = "---"
+            else:
+                p1 = f"{taxa(erros_L1[j],   erros_L1[j-1]):.4f}"
+                p2 = f"{taxa(erros_L2[j],   erros_L2[j-1]):.4f}"
+                pi = f"{taxa(erros_Linf[j], erros_Linf[j-1]):.4f}"
+
+            corpo.append(
+                f"{info['N']} & {info['M']} & "
+                f"{info['dx']:.4e} & {info['dt']:.4e} & {info['cfl']:.4f} & "
+                f"{info['L1']:.4e} & {p1} & "
+                f"{info['L2']:.4e} & {p2} & "
+                f"{info['Linf']:.4e} & {pi} \\\\"
+            )
+
+        rodape = r"\bottomrule" "\n" r"\end{tabular}"
+
+        latex_tabular = "\n".join([cabecalho] + corpo + [rodape])
+
+        os.makedirs("tabelas", exist_ok=True)
+        caminho = "tabelas/adveccao_convergencia_completo.tex"
+        with open(caminho, "w") as f:
+            f.write(latex_tabular)
+
+        print(f"\nTabela salva em: {caminho}\n")
+        print(latex_tabular)
 
     elif op == 14: #apresenta os movimentos brownianos em cada amostra
         matriz = ass.matriz_b()
@@ -1314,9 +1533,84 @@ if __name__ == "__main__":
                              title = "Duas primeiras amostras para assimilação")
         graf.plot2d()  
 
-    elif op == 7: #gráficos de validação do método numérico
-        val.graficos()
+    elif op == 7:  # gráficos de validação — ondas + erros em cada painel
+        #import os
+        #import matplotlib.pyplot as plt
+        #from dominio import Dominio
 
+        valores_N = [256, 512, 1024, 2048, 4096, 8192]
+        x_min, x_max = 1.5, 2.5
+
+        fig, axs = plt.subplots(3, 2, figsize=(11, 9), sharex=True, sharey=True)
+        axs_flat = axs.flatten()
+
+        for i, N in enumerate(valores_N):
+            M = int((N * 100) // 392)          # CFL ≈ 0.98
+            domi = Dominio(N=N, M=M)
+            s = SolucaoAdveccao(domi)
+
+            sol_an  = s.solucao_analitica(iteracao=domi.M - 1)
+            sol_num = s.solucao_numerica()
+            cfl     = s.CFL()
+
+            erro = np.abs(sol_an - sol_num)
+            L1   = domi.dx * np.sum(erro)
+            L2   = np.sqrt(domi.dx * np.sum(erro**2))
+            Linf = np.max(erro)
+
+            ax = axs_flat[i]
+            ax.plot(domi.x, sol_an,  color='black',    linewidth=1.4,
+                    label='Analítica')
+            ax.plot(domi.x, sol_num, color='tab:blue', linewidth=1.2,
+                    linestyle='--', label='Numérica')
+
+            ax.set_xlim(x_min, x_max)
+            ax.set_title(f"N = {N},  M = {M},  CFL = {cfl:.4f}", fontsize=10)
+            ax.grid(True, alpha=0.3)
+
+            # Legenda com as três normas
+            texto_normas = (
+                rf"$\|e\|_{{L^1}} = {L1:.2e}$" "\n"
+                rf"$\|e\|_{{L^2}} = {L2:.2e}$" "\n"
+                rf"$\|e\|_{{L^\infty}} = {Linf:.2e}$"
+            )
+            leg = ax.legend(
+                fontsize=8,
+                loc='upper right',
+                framealpha=0.9,
+                handlelength=1.5,
+            )
+            ax.add_artist(leg)
+
+            ax.text(
+                0.03, 0.97, texto_normas,
+                transform=ax.transAxes,
+                fontsize=8,
+                va='top', ha='left',
+                bbox=dict(boxstyle='round,pad=0.3',
+                        facecolor='white', alpha=0.85,
+                        edgecolor='gray', linewidth=0.6),
+            )
+
+        # Rótulos apenas nas bordas
+        for ax in axs[-1, :]:
+            ax.set_xlabel(r"$x$")
+        for ax in axs[:, 0]:
+            ax.set_ylabel(r"$\eta$")
+
+        fig.suptitle(
+            r"Validação da advecção — Lax--Friedrichs, CFL $\approx$ 0.98",
+            fontsize=12, fontweight='bold'
+        )
+        fig.tight_layout(rect=[0, 0, 1, 0.97])
+
+        #os.makedirs("figuras", exist_ok=True)
+        #caminho = "figuras/adveccao_perfis.pdf"
+        #fig.savefig(caminho, bbox_inches='tight', dpi=300)
+        #print(f"Figura salva em: {caminho}")
+
+        plt.show()
+    
     elif op == 6: #tabela de validação do método numérico
         val.tabela()
 

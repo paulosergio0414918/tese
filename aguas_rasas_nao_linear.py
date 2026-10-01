@@ -514,8 +514,412 @@ class Validacao(SolucaoAguasRasasNaoLinear):
                         f"λ = {self.calculo_cfl(passo*(2**2), 2**(j+5))}"
                         )
         print(tab)
-    
+
     def ordem_de_convergencia(self):
+        """Auto-convergência do método malha_c para o SWE não linear.
+
+        Sem solução analítica, usa a solução em N_ref = 8192 como referência
+        e subamostra nos pontos coincidentes das malhas {256, ..., 4096}.
+
+        Δt é FIXO = CFL·Δx/√H (CFL = 0.8, H = 1), de modo que todas as
+        malhas atinjam T = M·Δt = 2 exatamente. Sem isso, o Δt dinâmico
+        do malha_c faz cada malha chegar a um tempo final diferente e a
+        medição de ordem fica inválida.
+        """
+        import math
+        from rich import print
+        from rich.table import Table
+        from dominio import Dominio
+
+        valores_N = [256, 512, 1024, 2048, 4096]
+        N_ref     = 8192
+
+        cfl_alvo = 0.8
+        H        = 1.0
+        t_final  = 2.0
+        L_tot    = 8.0            # L - L0 = 4 - (-4)
+
+        def roda(N):
+            """Roda malha_c com dt fixo até t = t_final. Devolve (eta, u, dx, dt, M)."""
+            dx = L_tot / N
+            dt = cfl_alvo * dx / math.sqrt(H)
+            M  = int(round(t_final / dt))
+
+            domi = Dominio(N=N, M=M)
+            s    = SolucaoAguasRasasNaoLinear(domi)
+
+            eta = s.eta_zero()
+            u   = s.u_zero()
+
+            for _ in range(M):
+                out = s.malha_c(eta=eta, u=u, dt=dt)
+                eta = out['eta_final']
+                u   = out['u_final']
+
+            return eta, u, dx, dt, M
+
+        # ---------- referência -------------------------------------------------
+        eta_ref, u_ref, dx_ref, dt_ref, M_ref = roda(N_ref)
+
+        # ---------- tabelas ----------------------------------------------------
+        e_eta_L1, e_eta_L2, e_eta_Li = [], [], []
+        e_u_L1,   e_u_L2,   e_u_Li   = [], [], []
+
+        tab_eta = Table(title="SWE não linear — malha C + SSPRK33 — η (CFL = 0.8)")
+        tab_u   = Table(title="SWE não linear — malha C + SSPRK33 — u (CFL = 0.8)")
+
+        for tab in (tab_eta, tab_u):
+            tab.add_column("N",   justify="center")
+            tab.add_column("M",   justify="center")
+            tab.add_column("Δx",  justify="center")
+            tab.add_column("Δt",  justify="center")
+            tab.add_column("CFL", justify="center")
+            tab.add_column("L¹",  justify="center")
+            tab.add_column("p",   justify="center", style="red")
+            tab.add_column("L²",  justify="center")
+            tab.add_column("p",   justify="center", style="red")
+            tab.add_column("L∞",  justify="center")
+            tab.add_column("p",   justify="center", style="red")
+
+        for j, N in enumerate(valores_N):
+            eta_n, u_n, dx, dt, M = roda(N)
+
+            # subamostragem da referência
+            fator = N_ref // N
+            eta_ref_sub = eta_ref[::fator]
+            u_ref_sub   = u_ref[::fator]
+
+            err_eta = np.abs(eta_n - eta_ref_sub)
+            err_u   = np.abs(u_n   - u_ref_sub)
+
+            L1_eta = dx * np.sum(err_eta)
+            L2_eta = np.sqrt(dx * np.sum(err_eta**2))
+            Li_eta = np.max(err_eta)
+
+            L1_u = dx * np.sum(err_u)
+            L2_u = np.sqrt(dx * np.sum(err_u**2))
+            Li_u = np.max(err_u)
+
+            e_eta_L1.append(L1_eta); e_eta_L2.append(L2_eta); e_eta_Li.append(Li_eta)
+            e_u_L1.append(L1_u);     e_u_L2.append(L2_u);     e_u_Li.append(Li_u)
+
+            cfl_efetivo = dt / dx
+
+            if j == 0:
+                tab_eta.add_row(
+                    f"{N}", f"{M}",
+                    f"{dx:.4e}", f"{dt:.4e}", f"{cfl_efetivo:.3f}",
+                    f"{L1_eta:.4e}", "---",
+                    f"{L2_eta:.4e}", "---",
+                    f"{Li_eta:.4e}", "---",
+                )
+                tab_u.add_row(
+                    f"{N}", f"{M}",
+                    f"{dx:.4e}", f"{dt:.4e}", f"{cfl_efetivo:.3f}",
+                    f"{L1_u:.4e}", "---",
+                    f"{L2_u:.4e}", "---",
+                    f"{Li_u:.4e}", "---",
+                )
+            else:
+                p_eta_1 = math.log(e_eta_L1[j-1] / e_eta_L1[j]) / math.log(2)
+                p_eta_2 = math.log(e_eta_L2[j-1] / e_eta_L2[j]) / math.log(2)
+                p_eta_i = math.log(e_eta_Li[j-1] / e_eta_Li[j]) / math.log(2)
+
+                p_u_1 = math.log(e_u_L1[j-1] / e_u_L1[j]) / math.log(2)
+                p_u_2 = math.log(e_u_L2[j-1] / e_u_L2[j]) / math.log(2)
+                p_u_i = math.log(e_u_Li[j-1] / e_u_Li[j]) / math.log(2)
+
+                tab_eta.add_row(
+                    f"{N}", f"{M}",
+                    f"{dx:.4e}", f"{dt:.4e}", f"{cfl_efetivo:.3f}",
+                    f"{L1_eta:.4e}", f"{p_eta_1:.4f}",
+                    f"{L2_eta:.4e}", f"{p_eta_2:.4f}",
+                    f"{Li_eta:.4e}", f"{p_eta_i:.4f}",
+                )
+                tab_u.add_row(
+                    f"{N}", f"{M}",
+                    f"{dx:.4e}", f"{dt:.4e}", f"{cfl_efetivo:.3f}",
+                    f"{L1_u:.4e}", f"{p_u_1:.4f}",
+                    f"{L2_u:.4e}", f"{p_u_2:.4f}",
+                    f"{Li_u:.4e}", f"{p_u_i:.4f}",
+                )
+
+        print(tab_eta)
+        print(tab_u)
+
+    def tabela_latex(self, completa: bool = False, salvar: bool = True):
+        """Gera tabela de convergência em LaTeX para o SWE não linear (malha_c).
+
+        Estratégia de auto-convergência: N_ref = 8192 é usado como referência.
+        Δt fixo = CFL·Δx/√H, CFL = 0.8, H = 1, de modo que todas as malhas
+        atinjam exatamente T = 2.
+
+        Parâmetros
+        ----------
+        completa : bool
+            Se False, gera a tabela compacta (N, M, Δx, Δt, CFL, taxas p_{L¹}, p_{L²}, p_{L∞}).
+            Se True, gera a tabela completa com os valores absolutos dos erros.
+        salvar : bool
+            Se True, grava os arquivos .tex em ./tabelas/.
+        """
+        import math
+        import os
+        from dominio import Dominio
+
+        valores_N = [256, 512, 1024, 2048, 4096]
+        N_ref     = 8192
+        cfl_alvo  = 0.8
+        H         = 1.0
+        t_final   = 2.0
+        L_tot     = 8.0
+
+        def roda(N):
+            dx = L_tot / N
+            dt = cfl_alvo * dx / math.sqrt(H)
+            M  = int(round(t_final / dt))
+
+            domi = Dominio(N=N, M=M)
+            s    = SolucaoAguasRasasNaoLinear(domi)
+
+            eta = s.eta_zero()
+            u   = s.u_zero()
+
+            for _ in range(M):
+                out = s.malha_c(eta=eta, u=u, dt=dt)
+                eta = out['eta_final']
+                u   = out['u_final']
+
+            return eta, u, dx, dt, M
+
+        # ---------- referência ----------
+        eta_ref, u_ref, _, _, _ = roda(N_ref)
+
+        # ---------- coleta ----------
+        linhas = []
+        erros_eta = {"L1": [], "L2": [], "Li": []}
+        erros_u   = {"L1": [], "L2": [], "Li": []}
+
+        for N in valores_N:
+            eta_n, u_n, dx, dt, M = roda(N)
+
+            fator = N_ref // N
+            eta_ref_sub = eta_ref[::fator]
+            u_ref_sub   = u_ref[::fator]
+
+            err_eta = np.abs(eta_n - eta_ref_sub)
+            err_u   = np.abs(u_n   - u_ref_sub)
+
+            erros_eta["L1"].append(dx * np.sum(err_eta))
+            erros_eta["L2"].append(np.sqrt(dx * np.sum(err_eta**2)))
+            erros_eta["Li"].append(np.max(err_eta))
+
+            erros_u["L1"].append(dx * np.sum(err_u))
+            erros_u["L2"].append(np.sqrt(dx * np.sum(err_u**2)))
+            erros_u["Li"].append(np.max(err_u))
+
+            linhas.append({
+                "N": N, "M": M,
+                "dx": dx, "dt": dt,
+                "cfl": dt / dx,
+            })
+
+        def taxa(e_atual, e_anterior):
+            return math.log(e_anterior / e_atual) / math.log(2)
+
+        def seq_taxas(seq):
+            return [None] + [taxa(seq[j], seq[j-1]) for j in range(1, len(seq))]
+
+        p_eta = {k: seq_taxas(v) for k, v in erros_eta.items()}
+        p_u   = {k: seq_taxas(v) for k, v in erros_u.items()}
+
+        # ---------- montagem LaTeX ----------
+        def gera_tabela(erros, taxas):
+            if completa:
+                cab = (
+                    r"\begin{tabular}{cccccccccccc}" "\n"
+                    r"\toprule" "\n"
+                    r"$N$ & $M$ & $\Delta x$ & $\Delta t$ & CFL & "
+                    r"$L^1$ & $p_{L^1}$ & $L^2$ & $p_{L^2}$ & "
+                    r"$L^\infty$ & $p_{L^\infty}$ \\" "\n"
+                    r"\midrule"
+                )
+            else:
+                cab = (
+                    r"\begin{tabular}{cccccccc}" "\n"
+                    r"\toprule" "\n"
+                    r"$N$ & $M$ & $\Delta x$ & $\Delta t$ & CFL & "
+                    r"$p_{L^1}$ & $p_{L^2}$ & $p_{L^\infty}$ \\" "\n"
+                    r"\midrule"
+                )
+
+            corpo = []
+            for j, info in enumerate(linhas):
+                def f_taxa(chave):
+                    v = taxas[chave][j]
+                    return "---" if v is None else f"{v:.4f}"
+
+                if completa:
+                    linha = (
+                        f"{info['N']} & {info['M']} & "
+                        f"{info['dx']:.4e} & {info['dt']:.4e} & {info['cfl']:.4f} & "
+                        f"{erros['L1'][j]:.4e} & {f_taxa('L1')} & "
+                        f"{erros['L2'][j]:.4e} & {f_taxa('L2')} & "
+                        f"{erros['Li'][j]:.4e} & {f_taxa('Li')} \\\\"
+                    )
+                else:
+                    linha = (
+                        f"{info['N']} & {info['M']} & "
+                        f"{info['dx']:.4e} & {info['dt']:.4e} & {info['cfl']:.4f} & "
+                        f"{f_taxa('L1')} & {f_taxa('L2')} & {f_taxa('Li')} \\\\"
+                    )
+                corpo.append(linha)
+
+            rodape = r"\bottomrule" "\n" r"\end{tabular}"
+            return "\n".join([cab] + corpo + [rodape])
+
+        tex_eta = gera_tabela(erros_eta, p_eta)
+        tex_u   = gera_tabela(erros_u,   p_u)
+
+        if salvar:
+            os.makedirs("tabelas", exist_ok=True)
+            sufixo = "completo" if completa else "simples"
+            cam_eta = f"tabelas/swe_nl_eta_{sufixo}.tex"
+            cam_u   = f"tabelas/swe_nl_u_{sufixo}.tex"
+            with open(cam_eta, "w") as f: f.write(tex_eta)
+            with open(cam_u,   "w") as f: f.write(tex_u)
+            print(f"Tabela η salva em: {cam_eta}")
+            print(f"Tabela u salva em: {cam_u}")
+
+        print("\n===== TABELA η =====")
+        print(tex_eta)
+        print("\n===== TABELA u =====")
+        print(tex_u)
+
+        return {"eta": tex_eta, "u": tex_u}
+
+    def graficos(self, salvar: bool = True):
+        """Gráficos comparativos para SWE não linear — sem solução analítica.
+
+        Cada painel mostra a solução numérica na malha corrente sobreposta
+        à solução de referência (N_ref = 8192) sub-amostrada nos pontos
+        coincidentes. A janela é [1.5, 2.5], onde o pulso direito está
+        concentrado em t = 2.
+
+        Δt fixo = CFL·Δx/√H, CFL = 0.8, H = 1, T = 2 exato.
+        """
+        import os
+        import math
+        import matplotlib.pyplot as plt
+        from dominio import Dominio
+
+        valores_N = [256, 512, 1024, 2048, 4096]
+        N_ref     = 8192
+        cfl_alvo  = 0.8
+        H         = 1.0
+        t_final   = 2.0
+        L_tot     = 8.0
+        x_min, x_max = 1.5, 2.5
+
+        def roda(N):
+            dx = L_tot / N
+            dt = cfl_alvo * dx / math.sqrt(H)
+            M  = int(round(t_final / dt))
+
+            domi = Dominio(N=N, M=M)
+            s    = SolucaoAguasRasasNaoLinear(domi)
+
+            eta = s.eta_zero()
+            u   = s.u_zero()
+
+            for _ in range(M):
+                out = s.malha_c(eta=eta, u=u, dt=dt)
+                eta = out['eta_final']
+                u   = out['u_final']
+
+            return eta, u, dx, dt, M
+
+        # ---------- referência ----------
+        eta_ref, u_ref, _, _, _ = roda(N_ref)
+
+        for campo in ("eta", "u"):
+            fig, axs = plt.subplots(3, 2, figsize=(11, 9),
+                                    sharex=True, sharey=True)
+            axs_flat = axs.flatten()
+
+            for i, N in enumerate(valores_N):
+                eta_n, u_n, dx, dt, M = roda(N)
+
+                fator = N_ref // N
+                eta_ref_sub = eta_ref[::fator]
+                u_ref_sub   = u_ref[::fator]
+
+                domi = Dominio(N=N, M=M)
+                x_eta = domi.x
+                x_u   = domi.x + domi.dx / 2
+
+                if campo == "eta":
+                    y_num = eta_n
+                    y_ref = eta_ref_sub
+                    x_plot = x_eta
+                    rotulo_y = r"$\eta$"
+                else:
+                    y_num = u_n
+                    y_ref = u_ref_sub
+                    x_plot = x_u
+                    rotulo_y = r"$u$"
+
+                erro = np.abs(y_num - y_ref)
+                L1   = dx * np.sum(erro)
+                L2   = np.sqrt(dx * np.sum(erro**2))
+                Linf = np.max(erro)
+
+                ax = axs_flat[i]
+                ax.plot(x_plot, y_ref, color='black',    linewidth=1.4,
+                        label=fr'Ref. $N_{{\rm ref}}={N_ref}$')
+                ax.plot(x_plot, y_num, color='tab:blue', linewidth=1.2,
+                        linestyle='--', label=f'Numérica $N={N}$')
+
+                ax.set_xlim(x_min, x_max)
+                cfl_ef = dt / dx
+                ax.set_title(f"N = {N},  M = {M},  CFL = {cfl_ef:.4f}", fontsize=10)
+                ax.grid(True, alpha=0.3)
+
+                texto_normas = (
+                    rf"$\|e\|_{{L^1}} = {L1:.2e}$" "\n"
+                    rf"$\|e\|_{{L^2}} = {L2:.2e}$" "\n"
+                    rf"$\|e\|_{{L^\infty}} = {Linf:.2e}$"
+                )
+                leg = ax.legend(fontsize=8, loc='upper right', framealpha=0.9,
+                                handlelength=1.5)
+                ax.add_artist(leg)
+                ax.text(0.03, 0.97, texto_normas,
+                        transform=ax.transAxes, fontsize=8,
+                        va='top', ha='left',
+                        bbox=dict(boxstyle='round,pad=0.3',
+                                facecolor='white', alpha=0.85,
+                                edgecolor='gray', linewidth=0.6))
+
+            for ax in axs[-1, :]:
+                ax.set_xlabel(r"$x$")
+            for ax in axs[:, 0]:
+                ax.set_ylabel(rotulo_y)
+
+            fig.suptitle(
+                rf"SWE não linear — malha C + SSPRK33"
+                rf" (CFL $= 0.8$, $N_{{\rm ref}} = {N_ref}$)",
+                fontsize=12, fontweight='bold'
+            )
+            fig.tight_layout(rect=[0, 0, 1, 0.97])
+
+            if salvar:
+                os.makedirs("figuras", exist_ok=True)
+                caminho = f"figuras/swe_nl_{campo}_perfis.pdf"
+                fig.savefig(caminho, bbox_inches='tight', pad_inches=0.1, dpi=300)
+                print(f"Figura salva em: {caminho}")
+
+            plt.show()
+
+    '''def ordem_de_convergencia(self):
             """ Apresenta uma tabela com os erros de aproximação """
             import math
             from tqdm import tqdm
@@ -543,7 +947,7 @@ class Validacao(SolucaoAguasRasasNaoLinear):
                 else:
                     tab.add_row(f"{j+1}",f"{domi.N}", f"{domi.M}", f"{s.calculo_cfl()}", f"{vetor_erro[j]:.4e}", f"{math.log(abs(vetor_erro[j-1]/vetor_erro[j]))/math.log(4):.4e}" )
     
-            print(tab)
+            print(tab)'''
 
     def calculo_energia(self,
                         solucao_eta: np.ndarray = None,
@@ -1377,7 +1781,7 @@ if __name__ == "__main__":
 
 
                      
-    op = 18
+    op = -6
     it = 2**10
     iteracoes = it
 
@@ -1502,6 +1906,9 @@ if __name__ == "__main__":
 
         print("\nTodos os testes passaram.")
 
+    elif op == -7:  # gráficos comparativos η e u
+        val.graficos(salvar=False)
+    
     elif op == 7: # teste da 
         # 1) Fixe uma condição inicial
         eta0 = np.zeros(dom.N) + 0.001 * np.random.randn(dom.N)
@@ -1515,9 +1922,13 @@ if __name__ == "__main__":
         print("células com fonte:", linhas_nao_nulas)
         print("esperado         :", steps)
         assert set(linhas_nao_nulas) == set(steps)
+    
+    elif op == -6:  # tabela LaTeX completa (apêndice, paisagem)
+        val.tabela_latex(completa=True)
 
-    elif op == 6: # teste da ordem de convergênia da solução numérica
-        val.ordem_de_convergencia()
+    elif op == 6:   # tabela LaTeX compacta (corpo do texto)
+        val.tabela_latex(completa=False)
+
 
     elif op == 5: # construção de valores de cfl para teste
         val.valores_cfl()
